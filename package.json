@@ -1,0 +1,69 @@
+{
+  "name": "proptech-nexus",
+  "version": "1.0.0",
+  "description": "Plataforma inmobiliaria de próxima generación",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend/*",
+    "shared/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "docker-compose up -d && npm run dev:services",
+    "dev:services": "concurrently \"npm run dev:gateway\" \"npm run dev:user\" \"npm run dev:property\"",
+    "dev:gateway": "cd backend/api-gateway && npm run dev",
+    "dev:user": "cd backend/user-service && npm run dev",
+    "dev:property": "cd backend/property-service && npm run dev",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "npm run build:services",
+    "build:services": "cd backend/api-gateway && npm run build && cd ../user-service && npm run build && cd ../property-service && npm run build",
+    "install:all": "npm install && npm run install:frontend && npm run install:backend",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend/api-gateway && npm install && cd ../user-service && npm install && cd ../property-service && npm install",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && npm run test",
+    "test:backend": "npm run test:services",
+    "test:services": "cd backend/api-gateway && npm run test && cd ../user-service && npm run test && cd ../property-service && npm run test",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "npm run lint:services",
+    "lint:services": "cd backend/api-gateway && npm run lint && cd ../user-service && npm run lint && cd ../property-service && npm run lint",
+    "db:migrate": "cd backend/user-service && npm run db:migrate && cd ../property-service && npm run db:migrate",
+    "db:seed": "cd backend/user-service && npm run db:seed && cd ../property-service && npm run db:seed",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "keywords": [
+    "proptech",
+    "real-estate",
+    "nextjs",
+    "nestjs",
+    "microservices",
+    "typescript"
+  ],
+  "author": "PropTech Nexus Team",
+  "license": "MIT"
+}
