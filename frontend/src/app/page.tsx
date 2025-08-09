@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Header } from '@/components/layout/header'
-import { Footer } from '@/components/layout/footer'
+
 import { SearchFilters } from '@/components/search/search-filters'
 import { PropertyCard } from '@/components/property/property-card'
 import { TestimonialCard } from '@/components/testimonials/testimonial-card'
@@ -144,7 +143,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen">
-      <Header />
       
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 text-white">
@@ -395,7 +393,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Footer />
     </div>
   )
 }
