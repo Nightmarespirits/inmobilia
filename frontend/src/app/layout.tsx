@@ -1,17 +1,12 @@
 import type { Metadata } from 'next'
-import { Inter, Poppins } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import { Toaster } from '@/components/ui/toaster'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
-const poppins = Poppins({ 
-  weight: ['300', '400', '500', '600', '700'],
-  subsets: ['latin'],
-  variable: '--font-poppins'
-})
+// Nota: Fuentes de Google deshabilitadas en dev para evitar timeouts.
+// Usa fuentes del sistema vía Tailwind (font-sans). Si se desea, migrar a next/font/local.
 
 export const metadata: Metadata = {
   title: {
@@ -79,7 +74,7 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <head />
-      <body className={`${inter.variable} ${poppins.variable} font-sans antialiased`}>
+      <body className={`font-sans antialiased`}>
         <Providers>
           <LayoutContent>{children}</LayoutContent>
         </Providers>

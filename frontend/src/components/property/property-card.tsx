@@ -16,7 +16,7 @@ interface PropertyCardProps {
   bathrooms: number
   area: number
   image: string
-  status: 'available' | 'sold' | 'rented'
+  status: 'available' | 'sold' | 'rented' | 'pending'
   isFavorite?: boolean
   onFavoriteToggle?: (id: string) => void
   onView?: (id: string) => void
@@ -55,6 +55,8 @@ export function PropertyCard({
         return 'bg-red-500'
       case 'rented':
         return 'bg-blue-500'
+      case 'pending':
+        return 'bg-yellow-500'
       default:
         return 'bg-gray-500'
     }
@@ -68,6 +70,8 @@ export function PropertyCard({
         return 'Vendido'
       case 'rented':
         return 'Alquilado'
+      case 'pending':
+        return 'Pendiente'
       default:
         return 'N/A'
     }

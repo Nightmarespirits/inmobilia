@@ -194,3 +194,26 @@ export const propertiesService = {
     return data || []
   }
 }
+
+// Exportar funciones individuales para compatibilidad
+export const getProperties = propertiesService.getProperties
+export const getPropertyById = propertiesService.getPropertyById
+export const createProperty = propertiesService.createProperty
+export const updateProperty = propertiesService.updateProperty
+export const deleteProperty = propertiesService.deleteProperty
+export const getAgentProperties = propertiesService.getAgentProperties
+
+// Función de búsqueda avanzada con filtros
+export const searchProperties = async (params: { query?: string } & PropertyFilters): Promise<Property[]> => {
+  const { query, ...filters } = params
+  
+  if (query) {
+    // Si hay término de búsqueda, usar búsqueda por texto
+    return propertiesService.searchProperties(query)
+  } else {
+    // Si solo hay filtros, usar getProperties con filtros
+    return propertiesService.getProperties(filters)
+  }
+}
+
+export const getNearbyProperties = propertiesService.getNearbyProperties

@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { createProperty } from '@/lib/services/dashboard'
 import Image from 'next/image'
 
 const propertyTypes = [
@@ -172,6 +173,15 @@ export default function CreatePropertyPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "Debes estar autenticado para crear una propiedad.",
+        variant: "destructive",
+      })
+      return
+    }
+    
     // Validation
     if (!formData.title.trim()) {
       toast({
@@ -200,22 +210,47 @@ export default function CreatePropertyPage() {
       return
     }
 
+    if (!formData.description.trim()) {
+      toast({
+        title: "Error",
+        description: "La descripción es obligatoria.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Crear la propiedad en Supabase
+      const propertyData = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        price: Number(formData.price),
+        type: formData.type,
+        bedrooms: Number(formData.bedrooms) || 0,
+        bathrooms: Number(formData.bathrooms) || 0,
+        area: Number(formData.area) || 0,
+        location: formData.location.trim(),
+        address: formData.address.trim() || formData.location.trim(),
+        images: formData.images.length > 0 ? formData.images : ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800'],
+        features: formData.features,
+        agent_id: user.id
+      }
+      
+      const newProperty = await createProperty(propertyData)
       
       toast({
         title: "¡Propiedad creada!",
-        description: "La propiedad se ha publicado exitosamente.",
+        description: `La propiedad "${newProperty.title}" se ha publicado exitosamente.`,
       })
       
       router.push('/properties')
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error creating property:', error)
       toast({
-        title: "Error",
-        description: "Hubo un problema al crear la propiedad. Inténtalo de nuevo.",
+        title: "Error al crear propiedad",
+        description: error?.message || "Hubo un problema al crear la propiedad. Verifica tu conexión y permisos.",
         variant: "destructive",
       })
     } finally {

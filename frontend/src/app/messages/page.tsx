@@ -24,136 +24,55 @@ import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import Image from 'next/image'
+import { messagesService } from '@/lib/services/messages'
+import { supabase } from '@/lib/supabase'
 
-// Mock conversations data
-const mockConversations = [
-  {
-    id: '1',
-    participant: {
-      id: 'agent-1',
-      name: 'María González',
-      avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face',
-      role: 'agent',
-      isOnline: true,
-    },
-    lastMessage: {
-      text: 'Perfecto, podemos agendar la visita para mañana a las 3 PM',
-      timestamp: '2024-01-20T15:30:00Z',
-      senderId: 'agent-1',
-      isRead: true,
-    },
-    unreadCount: 0,
-    property: {
-      id: '1',
-      title: 'Departamento Moderno en San Isidro',
-    },
-  },
-  {
-    id: '2',
-    participant: {
-      id: 'buyer-1',
-      name: 'Carlos Mendoza',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
-      role: 'buyer',
-      isOnline: false,
-    },
-    lastMessage: {
-      text: '¿Está disponible para una videollamada?',
-      timestamp: '2024-01-20T14:15:00Z',
-      senderId: 'buyer-1',
-      isRead: false,
-    },
-    unreadCount: 2,
-    property: {
-      id: '2',
-      title: 'Casa Familiar en Miraflores',
-    },
-  },
-  {
-    id: '3',
-    participant: {
-      id: 'agent-2',
-      name: 'Ana Rodríguez',
-      avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=face',
-      role: 'agent',
-      isOnline: true,
-    },
-    lastMessage: {
-      text: 'Te envío más fotos de la propiedad',
-      timestamp: '2024-01-20T12:45:00Z',
-      senderId: 'agent-2',
-      isRead: true,
-    },
-    unreadCount: 0,
-    property: {
-      id: '3',
-      title: 'Oficina Comercial en San Borja',
-    },
-  },
-]
+type UIConversation = {
+  id: string
+  participant: {
+    id: string
+    name: string
+    avatar?: string
+    role?: 'buyer' | 'agent'
+    isOnline?: boolean
+  }
+  lastMessage: {
+    text: string
+    timestamp: string
+    senderId: string
+    isRead: boolean
+  }
+  unreadCount: number
+  property: {
+    id?: string
+    title: string
+  }
+}
 
-// Mock messages for active conversation
-const mockMessages = [
-  {
-    id: '1',
-    text: 'Hola, me interesa mucho la propiedad que publicaste',
-    timestamp: '2024-01-20T14:00:00Z',
-    senderId: 'current-user',
-    status: 'read',
-  },
-  {
-    id: '2',
-    text: '¡Hola! Me alegra saber de tu interés. ¿Te gustaría agendar una visita?',
-    timestamp: '2024-01-20T14:05:00Z',
-    senderId: 'agent-1',
-    status: 'read',
-  },
-  {
-    id: '3',
-    text: 'Sí, me encantaría. ¿Qué días tienes disponible esta semana?',
-    timestamp: '2024-01-20T14:10:00Z',
-    senderId: 'current-user',
-    status: 'read',
-  },
-  {
-    id: '4',
-    text: 'Tengo disponibilidad mañana martes a las 3 PM o el miércoles a las 10 AM. ¿Cuál te conviene más?',
-    timestamp: '2024-01-20T14:20:00Z',
-    senderId: 'agent-1',
-    status: 'read',
-  },
-  {
-    id: '5',
-    text: 'Mañana a las 3 PM me viene perfecto',
-    timestamp: '2024-01-20T15:25:00Z',
-    senderId: 'current-user',
-    status: 'read',
-  },
-  {
-    id: '6',
-    text: 'Perfecto, podemos agendar la visita para mañana a las 3 PM',
-    timestamp: '2024-01-20T15:30:00Z',
-    senderId: 'agent-1',
-    status: 'read',
-  },
-]
+type UIMessage = {
+  id: string
+  text: string
+  timestamp: string
+  senderId: string
+  status: 'sent' | 'delivered' | 'read'
+}
 
 export default function MessagesPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, isLoading } = useAuth()
   const { toast } = useToast()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
-  const [conversations, setConversations] = useState(mockConversations)
-  const [activeConversation, setActiveConversation] = useState(mockConversations[0])
-  const [messages, setMessages] = useState(mockMessages)
+  const [conversations, setConversations] = useState<UIConversation[]>([])
+  const [activeConversation, setActiveConversation] = useState<UIConversation | null>(null)
+  const [messages, setMessages] = useState<UIMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
+  const [isBusy, setIsBusy] = useState(false)
 
   // Redirect if not logged in
   useEffect(() => {
-    if (!user) {
+    if (!isLoading && !user) {
       toast({
         title: "Inicia sesión",
         description: "Debes iniciar sesión para acceder a los mensajes.",
@@ -161,7 +80,79 @@ export default function MessagesPage() {
       })
       router.push('/auth/login')
     }
-  }, [user, router, toast])
+  }, [user, isLoading, router, toast])
+
+  // Load conversations when authenticated
+  useEffect(() => {
+    const loadConversations = async () => {
+      if (!user) return
+      try {
+        setIsBusy(true)
+        const convs = await messagesService.getUserConversations()
+
+        const uiConvs: UIConversation[] = []
+        for (const c of convs) {
+          const otherId = c.participants.find(p => p !== user.id) || user.id
+          const [{ data: otherProfile }, { data: property }] = await Promise.all([
+            supabase.from('profiles').select('id, full_name, avatar_url, role').eq('id', otherId).single(),
+            c.property_id
+              ? supabase.from('properties').select('id, title').eq('id', c.property_id).single()
+              : Promise.resolve({ data: null } as any)
+          ])
+
+          const unread = (c as any).messages?.filter((m: any) => !m.read && m.sender_id !== user.id).length || 0
+          const lastText = c.last_message || (c as any).messages?.[ (c as any).messages.length - 1 ]?.content || ''
+          const lastAt = c.last_message_at || (c as any).messages?.[ (c as any).messages.length - 1 ]?.created_at || new Date().toISOString()
+
+          uiConvs.push({
+            id: c.id,
+            participant: {
+              id: otherId,
+              name: otherProfile?.full_name || 'Usuario',
+              avatar: otherProfile?.avatar_url,
+              role: otherProfile?.role,
+              isOnline: false,
+            },
+            lastMessage: {
+              text: lastText,
+              timestamp: lastAt,
+              senderId: (c as any).messages?.[ (c as any).messages.length - 1 ]?.sender_id || otherId,
+              isRead: unread === 0,
+            },
+            unreadCount: unread,
+            property: {
+              id: property?.id,
+              title: property?.title || 'Conversación',
+            },
+          })
+        }
+
+        setConversations(uiConvs)
+        if (uiConvs.length > 0 && !activeConversation) {
+          setActiveConversation(uiConvs[0])
+          // preload first conversation messages
+          const msgs = await messagesService.getConversationMessages(uiConvs[0].id)
+          setMessages(
+            msgs.map(m => ({
+              id: m.id,
+              text: m.content,
+              timestamp: m.created_at,
+              senderId: m.sender_id,
+              status: m.read ? 'read' : 'delivered',
+            }))
+          )
+          await messagesService.markMessagesAsRead(uiConvs[0].id)
+        }
+      } catch (e) {
+        console.error('Error loading conversations', e)
+        toast({ title: 'Error', description: 'No se pudieron cargar las conversaciones', variant: 'destructive' })
+      } finally {
+        setIsBusy(false)
+      }
+    }
+
+    if (user) loadConversations()
+  }, [user])
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -190,64 +181,69 @@ export default function MessagesPage() {
     e.preventDefault()
     
     if (!newMessage.trim()) return
+    if (!activeConversation) return
 
-    const message = {
-      id: Date.now().toString(),
-      text: newMessage.trim(),
-      timestamp: new Date().toISOString(),
-      senderId: 'current-user',
-      status: 'sent' as const,
+    setIsBusy(true)
+    try {
+      const sent = await messagesService.sendMessage(activeConversation.id, newMessage.trim())
+      const message: UIMessage = {
+        id: sent.id,
+        text: sent.content,
+        timestamp: sent.created_at,
+        senderId: sent.sender_id,
+        status: 'sent',
+      }
+      setMessages(prev => [...prev, message])
+    } catch (e) {
+      toast({ title: 'Error', description: 'No se pudo enviar el mensaje', variant: 'destructive' })
+    } finally {
+      setIsBusy(false)
     }
-
-    setMessages(prev => [...prev, message])
     setNewMessage('')
 
     // Update conversation last message
     setConversations(prev =>
       prev.map(conv =>
-        conv.id === activeConversation.id
+        activeConversation && conv.id === activeConversation.id
           ? {
               ...conv,
               lastMessage: {
-                text: message.text,
-                timestamp: message.timestamp,
-                senderId: message.senderId,
+                text: newMessage.trim(),
+                timestamp: new Date().toISOString(),
+                senderId: user.id,
                 isRead: true,
               },
             }
           : conv
       )
     )
-
-    // Simulate message status updates
-    setTimeout(() => {
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === message.id ? { ...msg, status: 'delivered' } : msg
-        )
-      )
-    }, 1000)
-
-    setTimeout(() => {
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === message.id ? { ...msg, status: 'read' } : msg
-        )
-      )
-    }, 3000)
   }
 
-  const handleConversationSelect = (conversation: typeof mockConversations[0]) => {
+  const handleConversationSelect = async (conversation: UIConversation) => {
     setActiveConversation(conversation)
-    
-    // Mark as read
-    setConversations(prev =>
-      prev.map(conv =>
-        conv.id === conversation.id
-          ? { ...conv, unreadCount: 0, lastMessage: { ...conv.lastMessage, isRead: true } }
-          : conv
+    try {
+      const msgs = await messagesService.getConversationMessages(conversation.id)
+      setMessages(
+        msgs.map(m => ({
+          id: m.id,
+          text: m.content,
+          timestamp: m.created_at,
+          senderId: m.sender_id,
+          status: m.read ? 'read' : 'delivered',
+        }))
       )
-    )
+      await messagesService.markMessagesAsRead(conversation.id)
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === conversation.id
+            ? { ...conv, unreadCount: 0, lastMessage: { ...conv.lastMessage, isRead: true } }
+            : conv
+        )
+      )
+    } catch (e) {
+      console.error('Error loading conversation messages', e)
+      toast({ title: 'Error', description: 'No se pudieron cargar los mensajes', variant: 'destructive' })
+    }
   }
 
   const getMessageStatusIcon = (status: string) => {
@@ -324,14 +320,14 @@ export default function MessagesPage() {
                 whileHover={{ backgroundColor: '#f9fafb' }}
                 onClick={() => handleConversationSelect(conversation)}
                 className={`p-4 border-b cursor-pointer transition-colors ${
-                  activeConversation.id === conversation.id ? 'bg-blue-50 border-blue-200' : ''
+                  activeConversation?.id === conversation.id ? 'bg-blue-50 border-blue-200' : ''
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <div className="relative">
                     <div className="w-12 h-12 rounded-full overflow-hidden">
                       <Image
-                        src={conversation.participant.avatar}
+                        src={conversation.participant.avatar || 'https://api.dicebear.com/7.x/initials/svg?seed='+encodeURIComponent(conversation.participant.name)}
                         alt={conversation.participant.name}
                         width={48}
                         height={48}
@@ -383,24 +379,24 @@ export default function MessagesPage() {
             <div className="relative">
               <div className="w-10 h-10 rounded-full overflow-hidden">
                 <Image
-                  src={activeConversation.participant.avatar}
-                  alt={activeConversation.participant.name}
+                  src={(activeConversation?.participant.avatar) || 'https://api.dicebear.com/7.x/initials/svg?seed='+encodeURIComponent(activeConversation?.participant.name || 'U')}
+                  alt={activeConversation?.participant.name || 'Usuario'}
                   width={40}
                   height={40}
                   className="object-cover"
                 />
               </div>
-              {activeConversation.participant.isOnline && (
+              {activeConversation?.participant.isOnline && (
                 <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
               )}
             </div>
             
             <div>
               <h2 className="font-semibold text-gray-900">
-                {activeConversation.participant.name}
+                {activeConversation?.participant.name}
               </h2>
               <p className="text-sm text-gray-600">
-                {activeConversation.participant.isOnline ? 'En línea' : 'Desconectado'}
+                {activeConversation?.participant.isOnline ? 'En línea' : 'Desconectado'}
               </p>
             </div>
           </div>
@@ -422,7 +418,7 @@ export default function MessagesPage() {
         <div className="bg-blue-50 border-b p-3">
           <div className="flex items-center gap-2 text-sm text-blue-800">
             <span>💬 Conversación sobre:</span>
-            <span className="font-medium">{activeConversation.property.title}</span>
+            <span className="font-medium">{activeConversation?.property.title || 'Conversación'}</span>
           </div>
         </div>
 
@@ -436,22 +432,20 @@ export default function MessagesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 className={`flex ${
-                  message.senderId === 'current-user' ? 'justify-end' : 'justify-start'
+                  message.senderId === user.id ? 'justify-end' : 'justify-start'
                 }`}
               >
                 <div
                   className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                    message.senderId === 'current-user'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white border'
+                    message.senderId === user.id ? 'bg-blue-500 text-white' : 'bg-white border'
                   }`}
                 >
                   <p className="text-sm">{message.text}</p>
                   <div className={`flex items-center justify-end gap-1 mt-1 ${
-                    message.senderId === 'current-user' ? 'text-blue-100' : 'text-gray-500'
+                    message.senderId === user.id ? 'text-blue-100' : 'text-gray-500'
                   }`}>
                     <span className="text-xs">{formatTime(message.timestamp)}</span>
-                    {message.senderId === 'current-user' && getMessageStatusIcon(message.status)}
+                    {message.senderId === user.id && getMessageStatusIcon(message.status)}
                   </div>
                 </div>
               </motion.div>
@@ -481,7 +475,7 @@ export default function MessagesPage() {
             
             <Button 
               type="submit" 
-              disabled={!newMessage.trim() || isLoading}
+              disabled={!newMessage.trim() || isLoading || !activeConversation}
               className="flex items-center gap-2"
             >
               <Send className="h-4 w-4" />

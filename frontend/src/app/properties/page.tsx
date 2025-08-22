@@ -10,121 +10,93 @@ import { Badge } from '@/components/ui/badge'
 import { PropertyCard } from '@/components/property/property-card'
 import { SearchFilters } from '@/components/search/search-filters'
 import { useAuth } from '@/hooks/use-auth'
+import { getProperties, searchProperties } from '@/lib/services/properties'
+import { toggleFavorite, isFavorite } from '@/lib/services/favorites'
+import { useToast } from '@/hooks/use-toast'
 import Link from 'next/link'
 
-// Mock data for properties
-const mockProperties = [
-  {
-    id: '1',
-    title: 'Departamento Moderno en San Isidro',
-    location: 'San Isidro, Lima',
-    price: 450000,
-    type: 'apartment',
-    status: 'available',
-    bedrooms: 3,
-    bathrooms: 2,
-    area: 120,
-    images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400&h=300&fit=crop'],
-    description: 'Hermoso departamento con vista al parque, acabados de primera.',
-    features: ['Estacionamiento', 'Gimnasio', 'Piscina', 'Seguridad 24h'],
-    isFavorite: false,
-  },
-  {
-    id: '2',
-    title: 'Casa Familiar en Miraflores',
-    location: 'Miraflores, Lima',
-    price: 850000,
-    type: 'house',
-    status: 'available',
-    bedrooms: 4,
-    bathrooms: 3,
-    area: 200,
-    images: ['https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400&h=300&fit=crop'],
-    description: 'Casa espaciosa ideal para familias, cerca al malecón.',
-    features: ['Jardín', 'Cochera doble', 'Terraza', 'Cerca al mar'],
-    isFavorite: true,
-  },
-  {
-    id: '3',
-    title: 'Oficina Comercial en San Borja',
-    location: 'San Borja, Lima',
-    price: 320000,
-    type: 'commercial',
-    status: 'available',
-    bedrooms: 0,
-    bathrooms: 2,
-    area: 80,
-    images: ['https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=400&h=300&fit=crop'],
-    description: 'Oficina moderna en zona comercial, ideal para empresas.',
-    features: ['Aire acondicionado', 'Estacionamiento', 'Recepción', 'Sala de reuniones'],
-    isFavorite: false,
-  },
-  {
-    id: '4',
-    title: 'Departamento de Lujo en Barranco',
-    location: 'Barranco, Lima',
-    price: 680000,
-    type: 'apartment',
-    status: 'available',
-    bedrooms: 2,
-    bathrooms: 2,
-    area: 95,
-    images: ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400&h=300&fit=crop'],
-    description: 'Departamento de lujo en el corazón bohemio de Lima.',
-    features: ['Balcón', 'Vista al mar', 'Acabados premium', 'Zona cultural'],
-    isFavorite: false,
-  },
-  {
-    id: '5',
-    title: 'Casa de Campo en Cieneguilla',
-    location: 'Cieneguilla, Lima',
-    price: 420000,
-    type: 'house',
-    status: 'available',
-    bedrooms: 3,
-    bathrooms: 2,
-    area: 300,
-    images: ['https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&h=300&fit=crop'],
-    description: 'Casa de campo perfecta para escapar de la ciudad.',
-    features: ['Piscina', 'Jardín amplio', 'BBQ', 'Aire puro'],
-    isFavorite: false,
-  },
-  {
-    id: '6',
-    title: 'Loft Industrial en Callao',
-    location: 'Callao, Lima',
-    price: 280000,
-    type: 'apartment',
-    status: 'available',
-    bedrooms: 1,
-    bathrooms: 1,
-    area: 65,
-    images: ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=400&h=300&fit=crop'],
-    description: 'Loft de estilo industrial, perfecto para jóvenes profesionales.',
-    features: ['Techos altos', 'Diseño moderno', 'Cerca al aeropuerto', 'Transporte público'],
-    isFavorite: true,
-  },
-]
+// Interfaces para propiedades
+interface Property {
+  id: string
+  title: string
+  location: string
+  price: number
+  type: string
+  status: string
+  bedrooms: number
+  bathrooms: number
+  area: number
+  images: string[]
+  description: string
+  features: string[]
+  isFavorite?: boolean
+  created_at?: string
+}
 
 type ViewMode = 'grid' | 'list'
 type SortOption = 'price-asc' | 'price-desc' | 'newest' | 'area-desc'
 
 export default function PropertiesPage() {
-  const [properties, setProperties] = useState(mockProperties)
-  const [filteredProperties, setFilteredProperties] = useState(mockProperties)
+  const [properties, setProperties] = useState<Property[]>([])
+  const [filteredProperties, setFilteredProperties] = useState<Property[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [showFilters, setShowFilters] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [currentFilters, setCurrentFilters] = useState({})
+  const [favoriteProperties, setFavoriteProperties] = useState<Set<string>>(new Set())
   
   const { user } = useAuth()
+  const { toast } = useToast()
 
-  // Filter and search logic
+  // Cargar propiedades desde Supabase
+  useEffect(() => {
+    const loadProperties = async () => {
+      setIsLoading(true)
+      try {
+        const propertiesData = await getProperties()
+        
+        // Cargar estado de favoritos si el usuario está autenticado
+        let favoritesSet = new Set<string>()
+        if (user) {
+          const favoriteChecks = await Promise.all(
+            propertiesData.map(async (property) => {
+              const isFav = await isFavorite(user.id, property.id)
+              return { id: property.id, isFavorite: isFav }
+            })
+          )
+          favoritesSet = new Set(favoriteChecks.filter(f => f.isFavorite).map(f => f.id))
+        }
+        
+        // Agregar estado de favoritos a las propiedades
+        const propertiesWithFavorites = propertiesData.map(property => ({
+          ...property,
+          isFavorite: favoritesSet.has(property.id)
+        }))
+        
+        setProperties(propertiesWithFavorites)
+        setFavoriteProperties(favoritesSet)
+      } catch (error) {
+        console.error('Error loading properties:', error)
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar las propiedades. Inténtalo de nuevo.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadProperties()
+  }, [user, toast])
+
+  // Filtrar y ordenar propiedades
   useEffect(() => {
     let filtered = [...properties]
-
-    // Apply search filter
+    
+    // Aplicar término de búsqueda
     if (searchTerm) {
       filtered = filtered.filter(property =>
         property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -132,46 +104,130 @@ export default function PropertiesPage() {
         property.description.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
+    
+    // Aplicar filtros
+    // TODO: Implementar lógica de filtros basada en currentFilters
+    
+    // Aplicar ordenamiento
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'price-asc':
+          return a.price - b.price
+        case 'price-desc':
+          return b.price - a.price
+        case 'area-desc':
+          return b.area - a.area
+        case 'newest':
+        default:
+          // Ordenar por fecha de creación (más recientes primero)
+          return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
+      }
+    })
+    
+    setFilteredProperties(filtered)
+  }, [properties, searchTerm, sortBy, currentFilters])
 
-    // Apply sorting
-    switch (sortBy) {
-      case 'price-asc':
-        filtered.sort((a, b) => a.price - b.price)
-        break
-      case 'price-desc':
-        filtered.sort((a, b) => b.price - a.price)
-        break
-      case 'area-desc':
-        filtered.sort((a, b) => b.area - a.area)
-        break
-      case 'newest':
-      default:
-        // Keep original order for newest
-        break
+  const handleFavoriteToggle = async (propertyId: string) => {
+    if (!user) {
+      toast({
+        title: "Inicia sesión",
+        description: "Debes iniciar sesión para guardar favoritos.",
+        variant: "destructive",
+      })
+      return
     }
 
-    setFilteredProperties(filtered)
-  }, [properties, searchTerm, sortBy])
-
-  const handleFavoriteToggle = (propertyId: string) => {
-    setProperties(prev =>
-      prev.map(property =>
-        property.id === propertyId
-          ? { ...property, isFavorite: !property.isFavorite }
-          : property
+    try {
+      const result = await toggleFavorite(user.id, propertyId)
+      
+      // Actualizar estado local
+      const newFavorites = new Set(favoriteProperties)
+      if (result.added) {
+        newFavorites.add(propertyId)
+        toast({
+          title: "Agregado a favoritos",
+          description: "La propiedad se agregó a tus favoritos.",
+        })
+      } else {
+        newFavorites.delete(propertyId)
+        toast({
+          title: "Removido de favoritos",
+          description: "La propiedad se removió de tus favoritos.",
+        })
+      }
+      
+      setFavoriteProperties(newFavorites)
+      
+      // Actualizar propiedades
+      setProperties(prev => 
+        prev.map(property => 
+          property.id === propertyId 
+            ? { ...property, isFavorite: result.added }
+            : property
+        )
       )
-    )
+    } catch (error) {
+      console.error('Error toggling favorite:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el favorito. Inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleFiltersApply = (filters: any) => {
+  const handleFiltersApply = async (filters: any) => {
+    setCurrentFilters(filters)
     setIsLoading(true)
-    // Simulate API call
-    setTimeout(() => {
-      // Here you would apply the filters to the properties
-      // For now, we'll just close the filters
-      setShowFilters(false)
+    
+    try {
+      // Si hay filtros aplicados, usar búsqueda con filtros
+      const hasFilters = Object.keys(filters).some(key => 
+        filters[key] !== undefined && filters[key] !== '' && 
+        (Array.isArray(filters[key]) ? filters[key].length > 0 : true)
+      )
+      
+      let propertiesData
+      if (hasFilters || searchTerm) {
+        // Usar búsqueda avanzada
+        propertiesData = await searchProperties({
+          query: searchTerm,
+          ...filters
+        })
+      } else {
+        // Cargar todas las propiedades
+        propertiesData = await getProperties()
+      }
+      
+      // Actualizar estado de favoritos
+      let favoritesSet = new Set<string>()
+      if (user) {
+        const favoriteChecks = await Promise.all(
+          propertiesData.map(async (property) => {
+            const isFav = await isFavorite(user.id, property.id)
+            return { id: property.id, isFavorite: isFav }
+          })
+        )
+        favoritesSet = new Set(favoriteChecks.filter(f => f.isFavorite).map(f => f.id))
+      }
+      
+      const propertiesWithFavorites = propertiesData.map(property => ({
+        ...property,
+        isFavorite: favoritesSet.has(property.id)
+      }))
+      
+      setProperties(propertiesWithFavorites)
+      setFavoriteProperties(favoritesSet)
+    } catch (error) {
+      console.error('Error applying filters:', error)
+      toast({
+        title: "Error",
+        description: "No se pudieron aplicar los filtros. Inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
       setIsLoading(false)
-    }, 1000)
+    }
   }
 
   return (

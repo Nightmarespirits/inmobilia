@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { 
   Home, 
@@ -21,107 +22,57 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/use-auth'
+import { getDashboardStats, getRecentProperties, getRecentActivity, type DashboardStats, type RecentProperty, type RecentActivity } from '@/lib/services/dashboard'
 
-// Types for dashboard stats
-type BuyerStats = {
-  savedProperties: number;
-  viewedProperties: number;
-  scheduledVisits: number;
-  activeOffers: number;
-}
-
-type AgentStats = {
-  activeListings: number;
-  totalViews: number;
-  scheduledVisits: number;
-  closedDeals: number;
-}
-
-// Mock data for dashboard
-const mockStats: { buyer: BuyerStats; agent: AgentStats } = {
-  buyer: {
-    savedProperties: 12,
-    viewedProperties: 45,
-    scheduledVisits: 3,
-    activeOffers: 1,
-  },
-  agent: {
-    activeListings: 23,
-    totalViews: 1250,
-    scheduledVisits: 8,
-    closedDeals: 5,
+// Iconos para tipos de actividad
+const getActivityIcon = (type: string) => {
+  switch (type) {
+    case 'property_view': return Eye
+    case 'visit_scheduled': return Calendar
+    case 'offer_made': return DollarSign
+    case 'message_received': return MessageSquare
+    default: return Eye
   }
 }
-
-const mockRecentProperties = [
-  {
-    id: '1',
-    title: 'Departamento moderno en Miraflores',
-    location: 'Miraflores, Lima',
-    price: 450000,
-    bedrooms: 3,
-    bathrooms: 2,
-    area: 120,
-    image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400',
-    status: 'available' as const
-  },
-  {
-    id: '2',
-    title: 'Casa con jardín en San Isidro',
-    location: 'San Isidro, Lima',
-    price: 750000,
-    bedrooms: 4,
-    bathrooms: 3,
-    area: 200,
-    image: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400',
-    status: 'available' as const
-  },
-  {
-    id: '3',
-    title: 'Loft industrial en Barranco',
-    location: 'Barranco, Lima',
-    price: 320000,
-    bedrooms: 2,
-    bathrooms: 2,
-    area: 95,
-    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=400',
-    status: 'available' as const
-  }
-]
-
-const mockRecentActivity = [
-  {
-    id: '1',
-    type: 'property_view' as const,
-    message: 'Viste "Departamento en Miraflores"',
-    time: '2 horas',
-    icon: Eye
-  },
-  {
-    id: '2',
-    type: 'visit_scheduled' as const,
-    message: 'Programaste una visita para mañana',
-    time: '5 horas',
-    icon: Calendar
-  },
-  {
-    id: '3',
-    type: 'offer_made' as const,
-    message: 'Hiciste una oferta por S/ 420,000',
-    time: '1 día',
-    icon: DollarSign
-  }
-]
 
 export default function DashboardPage() {
   const { user, isLoading, logout } = useAuth()
   const router = useRouter()
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null)
+  const [recentProperties, setRecentProperties] = useState<RecentProperty[]>([])
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+  const [isLoadingData, setIsLoadingData] = useState(true)
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push('/auth/login')
     }
   }, [user, isLoading, router])
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (!user) return
+      
+      setIsLoadingData(true)
+      try {
+        const [stats, properties, activity] = await Promise.all([
+          getDashboardStats(user.id, user.role),
+          getRecentProperties(user.id, user.role),
+          getRecentActivity(user.id, user.role)
+        ])
+        
+        setDashboardStats(stats)
+        setRecentProperties(properties)
+        setRecentActivity(activity)
+      } catch (error) {
+        console.error('Error loading dashboard data:', error)
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    loadDashboardData()
+  }, [user])
 
   if (isLoading) {
     return (
@@ -136,8 +87,8 @@ export default function DashboardPage() {
   }
 
   const isBuyer = user.role === 'buyer'
-  const buyerStats = isBuyer ? mockStats.buyer : null
-  const agentStats = !isBuyer ? mockStats.agent : null
+  const buyerStats = dashboardStats?.buyer
+  const agentStats = dashboardStats?.agent
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -149,7 +100,7 @@ export default function DashboardPage() {
           transition={{ duration: 0.5 }}
         >
           <h1 className="text-3xl font-bold mb-2">
-            ¡Hola, {user.name}! 👋
+            ¡Hola, {user.full_name}! 👋
           </h1>
           <p className="text-muted-foreground">
             {isBuyer 
@@ -177,9 +128,9 @@ export default function DashboardPage() {
                   <Heart className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{buyerStats?.savedProperties || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (buyerStats?.savedProperties || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    +2 desde la semana pasada
+                    {isLoadingData ? 'Cargando...' : 'Propiedades guardadas'}
                   </p>
                 </CardContent>
               </Card>
@@ -196,9 +147,9 @@ export default function DashboardPage() {
                   <Eye className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{buyerStats?.viewedProperties || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (buyerStats?.viewedProperties || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    +12 esta semana
+                    {isLoadingData ? 'Cargando...' : 'Propiedades vistas'}
                   </p>
                 </CardContent>
               </Card>
@@ -215,9 +166,9 @@ export default function DashboardPage() {
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{buyerStats?.scheduledVisits || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (buyerStats?.scheduledVisits || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    Esta semana
+                    {isLoadingData ? 'Cargando...' : 'Visitas programadas'}
                   </p>
                 </CardContent>
               </Card>
@@ -234,9 +185,9 @@ export default function DashboardPage() {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{buyerStats?.activeOffers || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (buyerStats?.activeOffers || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    Esperando respuesta
+                    {isLoadingData ? 'Cargando...' : 'Ofertas activas'}
                   </p>
                 </CardContent>
               </Card>
@@ -255,9 +206,9 @@ export default function DashboardPage() {
                   <Building className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{agentStats?.activeListings || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (agentStats?.activeListings || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    +3 este mes
+                    {isLoadingData ? 'Cargando...' : 'Propiedades activas'}
                   </p>
                 </CardContent>
               </Card>
@@ -274,9 +225,9 @@ export default function DashboardPage() {
                   <Eye className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{agentStats?.totalViews || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (agentStats?.totalViews || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    +180 esta semana
+                    {isLoadingData ? 'Cargando...' : 'Visualizaciones totales'}
                   </p>
                 </CardContent>
               </Card>
@@ -293,9 +244,9 @@ export default function DashboardPage() {
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{agentStats?.scheduledVisits || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (agentStats?.scheduledVisits || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    Esta semana
+                    {isLoadingData ? 'Cargando...' : 'Visitas programadas'}
                   </p>
                 </CardContent>
               </Card>
@@ -312,9 +263,9 @@ export default function DashboardPage() {
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{agentStats?.closedDeals || 0}</div>
+                  <div className="text-2xl font-bold">{isLoadingData ? '...' : (agentStats?.closedDeals || 0)}</div>
                   <p className="text-xs text-muted-foreground">
-                    Este mes
+                    {isLoadingData ? 'Cargando...' : 'Ventas cerradas'}
                   </p>
                 </CardContent>
               </Card>
@@ -341,7 +292,7 @@ export default function DashboardPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {mockRecentProperties.slice(0, 3).map((property) => (
+              {recentProperties.slice(0, 3).map((property) => (
                 <div key={property.id} className="flex items-center space-x-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors">
                   <div className="w-16 h-16 bg-muted rounded-lg flex-shrink-0"></div>
                   <div className="flex-1 min-w-0">
@@ -378,10 +329,10 @@ export default function DashboardPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {mockRecentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-center space-x-4">
-                  <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                    <activity.icon className="h-4 w-4 text-primary" />
+              {recentActivity.map((activity) => (
+                <div key={activity.id} className="flex items-center space-x-3">
+                  <div className="p-2 bg-primary/10 rounded-full">
+                    {React.createElement(getActivityIcon(activity.type), { className: "h-4 w-4 text-primary" })}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm">{activity.message}</p>
@@ -412,43 +363,55 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {isBuyer ? (
                 <>
-                  <Button className="h-20 flex-col gap-2">
-                    <Search className="h-6 w-6" />
-                    Buscar Propiedades
-                  </Button>
-                  <Button variant="outline" className="h-20 flex-col gap-2">
-                    <Heart className="h-6 w-6" />
-                    Mis Favoritos
-                  </Button>
-                  <Button variant="outline" className="h-20 flex-col gap-2">
+                  <Link href="/properties">
+                    <Button className="h-20 flex-col gap-2 w-full">
+                      <Search className="h-6 w-6" />
+                      Buscar Propiedades
+                    </Button>
+                  </Link>
+                  <Link href="/favorites">
+                    <Button variant="outline" className="h-20 flex-col gap-2 w-full">
+                      <Heart className="h-6 w-6" />
+                      Mis Favoritos
+                    </Button>
+                  </Link>
+                  <Link href="/messages">
+                    <Button variant="outline" className="h-20 flex-col gap-2 w-full">
+                      <MessageSquare className="h-6 w-6" />
+                      Mensajes
+                    </Button>
+                  </Link>
+                  <Button variant="outline" className="h-20 flex-col gap-2 w-full" disabled>
                     <Calendar className="h-6 w-6" />
                     Mis Visitas
-                  </Button>
-                  <Button variant="outline" className="h-20 flex-col gap-2">
-                    <MessageSquare className="h-6 w-6" />
-                    Mensajes
+                    <span className="text-xs opacity-50">Próximamente</span>
                   </Button>
                 </>
               ) : (
                 <>
-                  <Button className="h-20 flex-col gap-2">
-                    <Plus className="h-6 w-6" />
-                    Nueva Propiedad
-                  </Button>
-                  <Button variant="outline" className="h-20 flex-col gap-2">
+                  <Link href="/properties/create">
+                    <Button className="h-20 flex-col gap-2 w-full">
+                      <Plus className="h-6 w-6" />
+                      Nueva Propiedad
+                    </Button>
+                  </Link>
+                  <Button variant="outline" className="h-20 flex-col gap-2 w-full" disabled>
                     <Users className="h-6 w-6" />
                     Mis Clientes
+                    <span className="text-xs opacity-50">Próximamente</span>
                   </Button>
-                  <Button variant="outline" className="h-20 flex-col gap-2">
+                  <Button variant="outline" className="h-20 flex-col gap-2 w-full" disabled>
                     <Calendar className="h-6 w-6" />
                     Agenda
+                    <span className="text-xs opacity-50">Próximamente</span>
                   </Button>
-                  <Button variant="outline" className="h-20 flex-col gap-2">
+                  <Button variant="outline" className="h-20 flex-col gap-2 w-full" disabled>
                     <BarChart3 className="h-6 w-6" />
                     Reportes
+                    <span className="text-xs opacity-50">Próximamente</span>
                   </Button>
                 </>
               )}

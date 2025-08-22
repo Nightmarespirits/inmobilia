@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { 
   Search, 
-  Filter, 
   MapPin, 
   Grid, 
   List, 
@@ -17,12 +16,18 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+// removed unused Card imports
 import { Badge } from '@/components/ui/badge'
 import { PropertyCard } from '@/components/property/property-card'
 import { SearchFilters } from '@/components/search/search-filters'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { searchProperties } from '@/lib/services/properties'
+import type { PropertyFilters } from '@/lib/services/properties'
+import { favoritesService } from '@/lib/services/favorites'
+import type { Property } from '@/lib/supabase'
+
+type UIProperty = Property & { isFavorite: boolean }
 
 // Mock properties data with more variety
 const mockProperties = [
@@ -199,16 +204,16 @@ const recentSearches = [
 type ViewMode = 'grid' | 'list' | 'map'
 type SortOption = 'relevance' | 'price-asc' | 'price-desc' | 'newest' | 'area-desc' | 'price-per-sqm'
 
-interface SearchFilters {
-  location: string
-  type: string
-  minPrice: string
-  maxPrice: string
-  bedrooms: string
-  bathrooms: string
-  minArea: string
-  maxArea: string
-  features: string[]
+interface FiltersState {
+  location?: string
+  type?: string
+  minPrice?: number
+  maxPrice?: number
+  bedrooms?: number
+  bathrooms?: number
+  minArea?: number
+  maxArea?: number
+  features?: string[]
 }
 
 export default function SearchPage() {
@@ -217,112 +222,88 @@ export default function SearchPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   
-  const [properties, setProperties] = useState(mockProperties)
-  const [filteredProperties, setFilteredProperties] = useState(mockProperties)
+  const [properties, setProperties] = useState<UIProperty[]>([])
+  const [filteredProperties, setFilteredProperties] = useState<UIProperty[]>([])
   const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [sortBy, setSortBy] = useState<SortOption>('relevance')
   const [showFilters, setShowFilters] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [activeFilters, setActiveFilters] = useState<SearchFilters>({
-    location: '',
-    type: '',
-    minPrice: '',
-    maxPrice: '',
-    bedrooms: '',
-    bathrooms: '',
-    minArea: '',
-    maxArea: '',
-    features: [],
-  })
+  const [activeFilters, setActiveFilters] = useState<FiltersState>({})
 
-  // Apply filters and search
-  useEffect(() => {
-    let filtered = [...properties]
-
-    // Apply search term
-    if (searchTerm) {
-      filtered = filtered.filter(property =>
-        property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        property.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        property.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        property.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        property.features.some(feature => 
-          feature.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      )
-    }
-
-    // Apply filters
-    if (activeFilters.location) {
-      filtered = filtered.filter(property =>
-        property.district.toLowerCase().includes(activeFilters.location.toLowerCase())
-      )
-    }
-
-    if (activeFilters.type) {
-      filtered = filtered.filter(property => property.type === activeFilters.type)
-    }
-
-    if (activeFilters.minPrice) {
-      filtered = filtered.filter(property => property.price >= parseInt(activeFilters.minPrice))
-    }
-
-    if (activeFilters.maxPrice) {
-      filtered = filtered.filter(property => property.price <= parseInt(activeFilters.maxPrice))
-    }
-
-    if (activeFilters.bedrooms) {
-      filtered = filtered.filter(property => property.bedrooms >= parseInt(activeFilters.bedrooms))
-    }
-
-    if (activeFilters.bathrooms) {
-      filtered = filtered.filter(property => property.bathrooms >= parseInt(activeFilters.bathrooms))
-    }
-
-    if (activeFilters.minArea) {
-      filtered = filtered.filter(property => property.area >= parseInt(activeFilters.minArea))
-    }
-
-    if (activeFilters.maxArea) {
-      filtered = filtered.filter(property => property.area <= parseInt(activeFilters.maxArea))
-    }
-
-    if (activeFilters.features.length > 0) {
-      filtered = filtered.filter(property =>
-        activeFilters.features.every(feature =>
-          property.features.some(propFeature =>
-            propFeature.toLowerCase().includes(feature.toLowerCase())
-          )
-        )
-      )
-    }
-
-    // Apply sorting
+  // Sorting helper
+  const applySort = useCallback((items: UIProperty[]) => {
+    const arr = [...items]
     switch (sortBy) {
       case 'price-asc':
-        filtered.sort((a, b) => a.price - b.price)
-        break
+        return arr.sort((a, b) => a.price - b.price)
       case 'price-desc':
-        filtered.sort((a, b) => b.price - a.price)
-        break
+        return arr.sort((a, b) => b.price - a.price)
       case 'area-desc':
-        filtered.sort((a, b) => b.area - a.area)
-        break
-      case 'price-per-sqm':
-        filtered.sort((a, b) => a.pricePerSqm - b.pricePerSqm)
-        break
+        return arr.sort((a, b) => b.area - a.area)
+      case 'price-per-sqm': {
+        return arr.sort((a, b) => {
+          const aVal = a.area ? a.price / a.area : Number.POSITIVE_INFINITY
+          const bVal = b.area ? b.price / b.area : Number.POSITIVE_INFINITY
+          return aVal - bVal
+        })
+      }
       case 'newest':
-        filtered.sort((a, b) => b.yearBuilt - a.yearBuilt)
-        break
+        return arr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       case 'relevance':
       default:
-        // Keep original order for relevance
-        break
+        return arr
     }
+  }, [sortBy])
 
-    setFilteredProperties(filtered)
-  }, [properties, searchTerm, activeFilters, sortBy])
+  // Fetch properties from Supabase when search term or filters change
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      setIsLoading(true)
+      try {
+        const params: PropertyFilters & { query?: string } = {
+          ...(activeFilters.type ? { type: activeFilters.type } : {}),
+          ...(activeFilters.minPrice ? { minPrice: activeFilters.minPrice } : {}),
+          ...(activeFilters.maxPrice ? { maxPrice: activeFilters.maxPrice } : {}),
+          ...(activeFilters.bedrooms ? { bedrooms: activeFilters.bedrooms } : {}),
+          ...(activeFilters.bathrooms ? { bathrooms: activeFilters.bathrooms } : {}),
+          ...(activeFilters.minArea ? { minArea: activeFilters.minArea } : {}),
+          ...(activeFilters.maxArea ? { maxArea: activeFilters.maxArea } : {}),
+          ...(activeFilters.location ? { location: activeFilters.location } : {}),
+        }
+        const data = await searchProperties({ query: searchTerm || undefined, ...params })
+
+        // Favorite IDs for current user
+        let favoriteIds: string[] = []
+        try {
+          favoriteIds = await favoritesService.getFavoritePropertyIds()
+        } catch (_) {
+          // ignore if not logged in
+        }
+
+        const mapped: UIProperty[] = data.map(p => ({ ...p, isFavorite: favoriteIds.includes(p.id) }))
+        if (!cancelled) {
+          setProperties(mapped)
+          setFilteredProperties(applySort(mapped))
+          toast({ title: 'Búsqueda actualizada', description: `Se encontraron ${mapped.length} propiedades.` })
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          toast({ title: 'Error al cargar propiedades', description: err?.message || 'Intenta nuevamente', variant: 'destructive' })
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [searchTerm, activeFilters, applySort])
+
+  // Re-apply sort when sort option changes
+  useEffect(() => {
+    setFilteredProperties(applySort(properties))
+  }, [sortBy, properties, applySort])
 
   const handleSearch = (term: string) => {
     setSearchTerm(term)
@@ -336,50 +317,34 @@ export default function SearchPage() {
     router.push(`/search?${params.toString()}`)
   }
 
-  const handleFavoriteToggle = (propertyId: string) => {
-    setProperties(prev =>
-      prev.map(property =>
-        property.id === propertyId
-          ? { ...property, isFavorite: !property.isFavorite }
-          : property
-      )
-    )
+  const handleFavoriteToggle = async (propertyId: string) => {
+    if (!user) {
+      toast({ title: 'Inicia sesión para guardar favoritos', variant: 'destructive' })
+      return
+    }
+    try {
+      const added = await favoritesService.toggleFavorite(propertyId)
+      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, isFavorite: added } : p))
+      setFilteredProperties(prev => prev.map(p => p.id === propertyId ? { ...p, isFavorite: added } : p))
+    } catch (err: any) {
+      toast({ title: 'No se pudo actualizar favorito', description: err?.message || 'Intenta nuevamente', variant: 'destructive' })
+    }
   }
 
-  const handleFiltersApply = (filters: any) => {
-    setIsLoading(true)
-    setActiveFilters(filters)
+  const handleFiltersApply = (filters: FiltersState) => {
     setShowFilters(false)
-    
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false)
-      toast({
-        title: "Filtros aplicados",
-        description: `Se encontraron ${filteredProperties.length} propiedades.`,
-      })
-    }, 1000)
+    setActiveFilters(filters)
   }
 
   const clearFilters = () => {
-    setActiveFilters({
-      location: '',
-      type: '',
-      minPrice: '',
-      maxPrice: '',
-      bedrooms: '',
-      bathrooms: '',
-      minArea: '',
-      maxArea: '',
-      features: [],
-    })
+    setActiveFilters({})
     setSearchTerm('')
     handleSearch('')
   }
 
   const getActiveFiltersCount = () => {
     return Object.values(activeFilters).filter(value => 
-      Array.isArray(value) ? value.length > 0 : value !== ''
+      Array.isArray(value) ? value.length > 0 : value !== undefined && value !== ''
     ).length + (searchTerm ? 1 : 0)
   }
 
@@ -597,12 +562,11 @@ export default function SearchPage() {
                   title={property.title}
                   location={property.location}
                   price={property.price}
-                  type={property.type}
                   status={property.status}
                   bedrooms={property.bedrooms}
                   bathrooms={property.bathrooms}
                   area={property.area}
-                  image={property.images[0]}
+                  image={property.images?.[0] || 'https://via.placeholder.com/400x300?text=Propiedad'}
                   isFavorite={property.isFavorite}
                   onFavoriteToggle={handleFavoriteToggle}
                   className={viewMode === 'list' ? 'flex-row' : ''}

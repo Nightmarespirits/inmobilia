@@ -12,7 +12,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60 * 1000, // 1 minute
-      cacheTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 5 * 60 * 1000, // 5 minutes
       retry: (failureCount, error: any) => {
         // Don't retry on 401/403 errors
         if (error?.status === 401 || error?.status === 403) {
@@ -30,24 +30,10 @@ const queryClient = new QueryClient({
 
 // Auth Provider Component
 function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { checkAuth } = useAuth()
-  const [isInitialized, setIsInitialized] = useState(false)
+  // useAuth ya gestiona la sesión inicial y suscripción a cambios
+  const { isLoading } = useAuth()
 
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await checkAuth()
-      } catch (error) {
-        console.error('Auth initialization failed:', error)
-      } finally {
-        setIsInitialized(true)
-      }
-    }
-
-    initAuth()
-  }, [checkAuth])
-
-  if (!isInitialized) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

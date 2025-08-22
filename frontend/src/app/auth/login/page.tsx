@@ -8,7 +8,7 @@ import { Eye, EyeOff, Building2, Mail, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { useAuth, mockLogin } from '@/hooks/use-auth'
+import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 
 export default function LoginPage() {
@@ -26,14 +26,7 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      // For development, use mock login
-      const result = await mockLogin(email, password)
-      
-      // Simulate the login process
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // Set auth state (this would normally be done by the login function)
-      // For now, we'll just show success and redirect
+      await login(email, password)
       toast({
         title: "¡Bienvenido!",
         description: "Has iniciado sesión correctamente.",
@@ -43,7 +36,7 @@ export default function LoginPage() {
     } catch (error: any) {
       toast({
         title: "Error de autenticación",
-        description: error.message || "Credenciales inválidas",
+        description: error?.message || "Credenciales inválidas",
         variant: "destructive",
       })
     } finally {

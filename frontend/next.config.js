@@ -7,7 +7,8 @@ const nextConfig = {
       'images.unsplash.com',
       'via.placeholder.com',
       'maps.googleapis.com',
-      'api.mapbox.com'
+      'api.mapbox.com',
+      'api.dicebear.com'
     ],
     remotePatterns: [
       {

@@ -9,9 +9,9 @@
     "shared/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev": "npm run dev:frontend",
     "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "docker-compose up -d && npm run dev:services",
+    "dev:backend": "docker compose up -d && npm run dev:services",
     "dev:services": "concurrently \"npm run dev:gateway\" \"npm run dev:user\" \"npm run dev:property\"",
     "dev:gateway": "cd backend/api-gateway && npm run dev",
     "dev:user": "cd backend/user-service && npm run dev",
