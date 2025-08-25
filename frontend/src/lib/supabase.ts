@@ -31,13 +31,42 @@ export interface Property {
   area: number
   location: string
   address: string
+  fullAddress?: string
   latitude?: number
   longitude?: number
   images: string[]
   features: string[]
   agent_id: string
+  views?: number
   created_at: string
   updated_at: string
+  
+  // Propiedades adicionales para la página de detalle
+  isFavorite?: boolean
+  parkingSpaces?: number
+  floor?: number
+  totalFloors?: number
+  yearBuilt?: number
+  publishedDate?: string
+  
+  // Información del agente
+  agent?: {
+    id: string
+    name: string
+    email: string
+    phone?: string
+    avatar?: string
+    rating?: number
+    specialization?: string
+    verified?: boolean
+  }
+  
+  // Lugares cercanos
+  nearbyPlaces?: Array<{
+    name: string
+    type: string
+    distance: string
+  }>
 }
 
 export interface Favorite {

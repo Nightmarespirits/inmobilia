@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { motion } from 'framer-motion'
 import { 
   Save, 
@@ -12,87 +15,61 @@ import {
   Trash2,
   MapPin,
   Home,
-  DollarSign,
-  Ruler,
-  Bed,
-  Bath,
-  Calendar,
-  Building
+  Building,
+  DollarSign
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ImageUpload } from '@/components/ui/image-upload'
+import { LoadingSpinner } from '@/components/ui/spinner'
+import { PropertyCardSkeleton } from '@/components/ui/loading-states'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
-import Image from 'next/image'
+import { getPropertyById, updateProperty, deleteProperty } from '@/lib/services/properties'
+import type { Property } from '@/lib/supabase'
 
-// Mock property data
-const mockProperty = {
-  id: '1',
-  title: 'Departamento Moderno en San Isidro',
-  description: 'Hermoso departamento con vista al parque, acabados de primera calidad y ubicación privilegiada.',
-  location: 'San Isidro, Lima',
-  district: 'San Isidro',
-  address: 'Av. Javier Prado Este 1234',
-  price: 450000,
-  currency: 'USD',
-  type: 'apartment',
-  status: 'available',
-  bedrooms: 3,
-  bathrooms: 2,
-  area: 120,
-  builtArea: 110,
-  lotArea: 0,
-  yearBuilt: 2020,
-  floor: 8,
-  totalFloors: 15,
-  parking: 2,
-  images: [
-    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&h=600&fit=crop',
-    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop',
-    'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&h=600&fit=crop',
-  ],
-  features: ['Estacionamiento', 'Gimnasio', 'Piscina', 'Seguridad 24h', 'Ascensor', 'Balcón'],
-  amenities: ['Aire acondicionado', 'Calefacción', 'Internet', 'Cable'],
-  nearbyPlaces: ['Centro comercial', 'Parque', 'Transporte público', 'Colegios'],
-  agent: {
-    id: 'agent-1',
-    name: 'María González',
-    phone: '+51 999 888 777',
-    email: 'maria@proptech.com',
-  },
-}
+// Esquema de validación con Zod que coincide con CreatePropertyData
+const propertySchema = z.object({
+  title: z.string().min(5, 'El título debe tener al menos 5 caracteres').max(100, 'El título no puede exceder 100 caracteres'),
+  description: z.string().min(20, 'La descripción debe tener al menos 20 caracteres').max(1000, 'La descripción no puede exceder 1000 caracteres'),
+  price: z.number().min(1, 'El precio debe ser mayor a 0'),
+  type: z.enum(['apartment', 'house', 'commercial', 'land']),
+  status: z.enum(['available', 'sold', 'rented', 'pending']),
+  bedrooms: z.number().min(0, 'El número de dormitorios no puede ser negativo').max(20, 'Número de dormitorios inválido'),
+  bathrooms: z.number().min(0, 'El número de baños no puede ser negativo').max(20, 'Número de baños inválido'),
+  area: z.number().min(1, 'El área debe ser mayor a 0').max(10000, 'El área parece demasiado grande'),
+  address: z.string().min(10, 'La dirección debe tener al menos 10 caracteres').max(200, 'La dirección no puede exceder 200 caracteres'),
+  location: z.string().min(3, 'La ubicación debe tener al menos 3 caracteres').max(100, 'La ubicación no puede exceder 100 caracteres'),
+  features: z.array(z.string()).default([]),
+  images: z.array(z.string().url('URL de imagen inválida')).min(1, 'Debe agregar al menos una imagen').max(20, 'Máximo 20 imágenes permitidas')
+})
 
+type PropertyFormData = z.infer<typeof propertySchema>
+
+// Opciones para los selects
 const propertyTypes = [
-  { value: 'apartment', label: 'Departamento' },
-  { value: 'house', label: 'Casa' },
-  { value: 'commercial', label: 'Comercial' },
-  { value: 'office', label: 'Oficina' },
-  { value: 'land', label: 'Terreno' },
+  { value: 'apartment', label: 'Departamento', icon: Building },
+  { value: 'house', label: 'Casa', icon: Home },
+  { value: 'commercial', label: 'Comercial', icon: Building },
+  { value: 'land', label: 'Terreno', icon: MapPin }
 ]
 
-const propertyStatus = [
+const propertyStatuses = [
   { value: 'available', label: 'Disponible' },
+  { value: 'pending', label: 'Pendiente' },
   { value: 'sold', label: 'Vendido' },
-  { value: 'rented', label: 'Alquilado' },
-  { value: 'reserved', label: 'Reservado' },
-]
-
-const currencies = [
-  { value: 'USD', label: 'USD ($)' },
-  { value: 'PEN', label: 'PEN (S/)' },
+  { value: 'rented', label: 'Alquilado' }
 ]
 
 const commonFeatures = [
-  'Estacionamiento', 'Gimnasio', 'Piscina', 'Seguridad 24h', 'Ascensor', 
-  'Balcón', 'Terraza', 'Jardín', 'Cochera', 'Portería', 'Sala de juegos',
-  'Área de BBQ', 'Lavandería', 'Depósito', 'Vista al mar', 'Vista al parque'
-]
-
-const commonAmenities = [
-  'Aire acondicionado', 'Calefacción', 'Internet', 'Cable', 'Gas natural',
-  'Agua caliente', 'Intercomunicador', 'Alarma', 'Closets empotrados'
+  'Piscina', 'Gimnasio', 'Ascensor', 'Portería 24h', 'Jardín', 
+  'Terraza', 'Balcón', 'Aire acondicionado', 'Calefacción', 
+  'Cocina equipada', 'Lavandería', 'Estudio', 'Vestidor'
 ]
 
 export default function EditPropertyPage() {
@@ -101,91 +78,81 @@ export default function EditPropertyPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   
-  const [property, setProperty] = useState(mockProperty)
-  const [isLoading, setIsLoading] = useState(false)
+  const [property, setProperty] = useState<Property | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isDeleting, setIsDeleting] = useState(false)
   const [newFeature, setNewFeature] = useState('')
-  const [newAmenity, setNewAmenity] = useState('')
-  const [newImageUrl, setNewImageUrl] = useState('')
 
-  // Redirect if not agent
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isValid },
+    setValue,
+    watch,
+    reset
+  } = useForm<PropertyFormData>({
+    resolver: zodResolver(propertySchema),
+    mode: 'onChange'
+  })
+
+  // Cargar datos de la propiedad
   useEffect(() => {
-    if (!user || user.role !== 'agent') {
-      toast({
-        title: "Acceso denegado",
-        description: "Solo los agentes inmobiliarios pueden editar propiedades.",
-        variant: "destructive",
-      })
-      router.push('/properties')
-    }
-  }, [user, router, toast])
-
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!property.title.trim()) {
-      newErrors.title = 'El título es requerido'
-    }
-
-    if (!property.description.trim()) {
-      newErrors.description = 'La descripción es requerida'
-    }
-
-    if (!property.location.trim()) {
-      newErrors.location = 'La ubicación es requerida'
-    }
-
-    if (!property.price || property.price <= 0) {
-      newErrors.price = 'El precio debe ser mayor a 0'
-    }
-
-    if (!property.area || property.area <= 0) {
-      newErrors.area = 'El área debe ser mayor a 0'
-    }
-
-    if (property.bedrooms < 0) {
-      newErrors.bedrooms = 'El número de dormitorios no puede ser negativo'
+    const loadProperty = async () => {
+      try {
+        setIsLoading(true)
+        const propertyData = await getPropertyById(params.id as string)
+        setProperty(propertyData)
+        
+        // Resetear el formulario con los datos de la propiedad
+        reset({
+          title: propertyData.title,
+          description: propertyData.description,
+          price: propertyData.price,
+          type: propertyData.type,
+          status: propertyData.status,
+          bedrooms: propertyData.bedrooms,
+          bathrooms: propertyData.bathrooms,
+          area: propertyData.area,
+          address: propertyData.address,
+          location: propertyData.location,
+          features: propertyData.features || [],
+          images: propertyData.images || []
+        })
+      } catch (error) {
+        console.error('Error loading property:', error)
+        toast({
+          title: "Error",
+          description: "No se pudo cargar la propiedad",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    if (property.bathrooms < 0) {
-      newErrors.bathrooms = 'El número de baños no puede ser negativo'
+    if (params.id) {
+      loadProperty()
     }
+  }, [params.id, reset, toast])
 
-    if (property.images.length === 0) {
-      newErrors.images = 'Debe agregar al menos una imagen'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSave = async () => {
-    if (!validateForm()) {
-      toast({
-        title: "Error de validación",
-        description: "Por favor corrige los errores en el formulario.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsSaving(true)
-
+  // Función para enviar el formulario
+  const onSubmit = async (data: PropertyFormData) => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      setIsSaving(true)
+      await updateProperty(params.id as string, data)
       
       toast({
-        title: "Propiedad actualizada",
-        description: "Los cambios se han guardado exitosamente.",
+        title: "¡Éxito!",
+        description: "La propiedad se ha actualizado correctamente",
       })
       
       router.push(`/properties/${params.id}`)
     } catch (error) {
+      console.error('Error updating property:', error)
       toast({
         title: "Error",
-        description: "No se pudo actualizar la propiedad. Intenta nuevamente.",
+        description: "No se pudo actualizar la propiedad. Inténtalo de nuevo.",
         variant: "destructive",
       })
     } finally {
@@ -193,82 +160,104 @@ export default function EditPropertyPage() {
     }
   }
 
-  const handleInputChange = (field: string, value: any) => {
-    setProperty(prev => ({ ...prev, [field]: value }))
-    
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }))
+  // Función para eliminar la propiedad
+  const handleDelete = async () => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta propiedad? Esta acción no se puede deshacer.')) {
+      return
+    }
+
+    try {
+      setIsDeleting(true)
+      await deleteProperty(params.id as string)
+      
+      toast({
+        title: "Propiedad eliminada",
+        description: "La propiedad ha sido eliminada exitosamente.",
+      })
+      
+      router.push('/properties')
+    } catch (error) {
+      console.error('Error deleting property:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar la propiedad. Inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
+  // Función para agregar característica
   const addFeature = (feature: string) => {
-    if (feature && !property.features.includes(feature)) {
-      setProperty(prev => ({
-        ...prev,
-        features: [...prev.features, feature]
-      }))
+    const currentFeatures = watch('features') || []
+    if (!currentFeatures.includes(feature)) {
+      setValue('features', [...currentFeatures, feature])
     }
   }
 
+  // Función para remover característica
   const removeFeature = (feature: string) => {
-    setProperty(prev => ({
-      ...prev,
-      features: prev.features.filter(f => f !== feature)
-    }))
+    const currentFeatures = watch('features') || []
+    setValue('features', currentFeatures.filter(f => f !== feature))
   }
 
-  const addAmenity = (amenity: string) => {
-    if (amenity && !property.amenities.includes(amenity)) {
-      setProperty(prev => ({
-        ...prev,
-        amenities: [...prev.amenities, amenity]
-      }))
-    }
+  // Estados de carga
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="container mx-auto px-4 py-8">
+          <PropertyCardSkeleton />
+        </div>
+      </div>
+    )
   }
 
-  const removeAmenity = (amenity: string) => {
-    setProperty(prev => ({
-      ...prev,
-      amenities: prev.amenities.filter(a => a !== amenity)
-    }))
+  if (!property) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Propiedad no encontrada</h2>
+          <p className="text-gray-600 mb-4">La propiedad que intentas editar no existe o ha sido eliminada.</p>
+          <Button onClick={() => router.push('/properties')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Volver a propiedades
+          </Button>
+        </div>
+      </div>
+    )
   }
 
-  const addImage = () => {
-    if (newImageUrl && !property.images.includes(newImageUrl)) {
-      setProperty(prev => ({
-        ...prev,
-        images: [...prev.images, newImageUrl]
-      }))
-      setNewImageUrl('')
-    }
-  }
-
-  const removeImage = (imageUrl: string) => {
-    setProperty(prev => ({
-      ...prev,
-      images: prev.images.filter(img => img !== imageUrl)
-    }))
-  }
-
-  if (!user || user.role !== 'agent') {
-    return null
+  if (!user || (user.role !== 'agent' && user.id !== property.agent_id)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Acceso denegado</h2>
+          <p className="text-gray-600 mb-4">Solo puedes editar tus propias propiedades.</p>
+          <Button onClick={() => router.push('/properties')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Volver a propiedades
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto px-4 max-w-4xl">
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <Button
               variant="outline"
-              onClick={() => router.back()}
+              onClick={() => router.push(`/properties/${params.id}`)}
               className="flex items-center gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
             </Button>
+            
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Editar Propiedad</h1>
               <p className="text-gray-600">ID: {params.id}</p>
@@ -276,12 +265,12 @@ export default function EditPropertyPage() {
           </div>
           
           <Button
-            onClick={handleSave}
-            disabled={isSaving}
+            onClick={handleSubmit(onSubmit)}
+            disabled={isSaving || !isValid}
             className="flex items-center gap-2"
           >
             {isSaving ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <LoadingSpinner className="h-4 w-4" />
             ) : (
               <Save className="h-4 w-4" />
             )}
@@ -290,512 +279,360 @@ export default function EditPropertyPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Form */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Basic Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Home className="h-5 w-5" />
-                  Información Básica
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Título *
-                  </label>
-                  <Input
-                    value={property.title}
-                    onChange={(e) => handleInputChange('title', e.target.value)}
-                    placeholder="Ej: Departamento moderno en San Isidro"
-                    className={errors.title ? 'border-red-500' : ''}
-                  />
-                  {errors.title && <p className="text-red-500 text-sm mt-1">{errors.title}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Descripción *
-                  </label>
-                  <textarea
-                    value={property.description}
-                    onChange={(e) => handleInputChange('description', e.target.value)}
-                    placeholder="Describe las características principales de la propiedad..."
-                    rows={4}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                      errors.description ? 'border-red-500' : ''
-                    }`}
-                  />
-                  {errors.description && <p className="text-red-500 text-sm mt-1">{errors.description}</p>}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Tipo de propiedad *
-                    </label>
-                    <select
-                      value={property.type}
-                      onChange={(e) => handleInputChange('type', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {propertyTypes.map(type => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Estado
-                    </label>
-                    <select
-                      value={property.status}
-                      onChange={(e) => handleInputChange('status', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {propertyStatus.map(status => (
-                        <option key={status.value} value={status.value}>
-                          {status.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Location */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5" />
-                  Ubicación
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ubicación general *
-                  </label>
-                  <Input
-                    value={property.location}
-                    onChange={(e) => handleInputChange('location', e.target.value)}
-                    placeholder="Ej: San Isidro, Lima"
-                    className={errors.location ? 'border-red-500' : ''}
-                  />
-                  {errors.location && <p className="text-red-500 text-sm mt-1">{errors.location}</p>}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Distrito
-                    </label>
-                    <Input
-                      value={property.district}
-                      onChange={(e) => handleInputChange('district', e.target.value)}
-                      placeholder="Ej: San Isidro"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Dirección exacta
-                    </label>
-                    <Input
-                      value={property.address}
-                      onChange={(e) => handleInputChange('address', e.target.value)}
-                      placeholder="Ej: Av. Javier Prado Este 1234"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Price and Details */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="h-5 w-5" />
-                  Precio y Detalles
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Precio *
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.price}
-                      onChange={(e) => handleInputChange('price', parseInt(e.target.value) || 0)}
-                      placeholder="450000"
-                      className={errors.price ? 'border-red-500' : ''}
-                    />
-                    {errors.price && <p className="text-red-500 text-sm mt-1">{errors.price}</p>}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Moneda
-                    </label>
-                    <select
-                      value={property.currency}
-                      onChange={(e) => handleInputChange('currency', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {currencies.map(currency => (
-                        <option key={currency.value} value={currency.value}>
-                          {currency.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <Bed className="h-4 w-4 inline mr-1" />
-                      Dormitorios
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.bedrooms}
-                      onChange={(e) => handleInputChange('bedrooms', parseInt(e.target.value) || 0)}
-                      min="0"
-                      className={errors.bedrooms ? 'border-red-500' : ''}
-                    />
-                    {errors.bedrooms && <p className="text-red-500 text-sm mt-1">{errors.bedrooms}</p>}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <Bath className="h-4 w-4 inline mr-1" />
-                      Baños
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.bathrooms}
-                      onChange={(e) => handleInputChange('bathrooms', parseInt(e.target.value) || 0)}
-                      min="0"
-                      className={errors.bathrooms ? 'border-red-500' : ''}
-                    />
-                    {errors.bathrooms && <p className="text-red-500 text-sm mt-1">{errors.bathrooms}</p>}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <Ruler className="h-4 w-4 inline mr-1" />
-                      Área total (m²) *
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.area}
-                      onChange={(e) => handleInputChange('area', parseInt(e.target.value) || 0)}
-                      min="1"
-                      className={errors.area ? 'border-red-500' : ''}
-                    />
-                    {errors.area && <p className="text-red-500 text-sm mt-1">{errors.area}</p>}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Estacionamientos
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.parking}
-                      onChange={(e) => handleInputChange('parking', parseInt(e.target.value) || 0)}
-                      min="0"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <Calendar className="h-4 w-4 inline mr-1" />
-                      Año de construcción
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.yearBuilt}
-                      onChange={(e) => handleInputChange('yearBuilt', parseInt(e.target.value) || 0)}
-                      min="1900"
-                      max={new Date().getFullYear()}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <Building className="h-4 w-4 inline mr-1" />
-                      Piso
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.floor}
-                      onChange={(e) => handleInputChange('floor', parseInt(e.target.value) || 0)}
-                      min="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Pisos totales
-                    </label>
-                    <Input
-                      type="number"
-                      value={property.totalFloors}
-                      onChange={(e) => handleInputChange('totalFloors', parseInt(e.target.value) || 0)}
-                      min="1"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Images */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="h-5 w-5" />
-                  Imágenes
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {errors.images && <p className="text-red-500 text-sm">{errors.images}</p>}
-                
-                <div className="flex gap-2">
-                  <Input
-                    value={newImageUrl}
-                    onChange={(e) => setNewImageUrl(e.target.value)}
-                    placeholder="URL de la imagen"
-                    className="flex-1"
-                  />
-                  <Button onClick={addImage} disabled={!newImageUrl}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {property.images.map((image, index) => (
-                    <div key={index} className="relative group">
-                      <div className="aspect-video rounded-lg overflow-hidden">
-                        <Image
-                          src={image}
-                          alt={`Imagen ${index + 1}`}
-                          width={300}
-                          height={200}
-                          className="object-cover w-full h-full"
-                        />
-                      </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => removeImage(image)}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+          {/* Formulario principal */}
+          <div className="lg:col-span-2">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+              {/* Información básica */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Home className="h-5 w-5" />
+                    Información básica
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Título de la propiedad *
+                      </label>
+                      <Input
+                        placeholder="Ej: Hermoso departamento en Miraflores"
+                        {...register('title')}
+                        className={errors.title ? 'border-red-500' : ''}
+                      />
+                      {errors.title && (
+                        <p className="text-red-500 text-sm mt-1">{errors.title.message}</p>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Precio (USD) *
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder="150000"
+                        {...register('price', { valueAsNumber: true })}
+                        className={errors.price ? 'border-red-500' : ''}
+                      />
+                      {errors.price && (
+                        <p className="text-red-500 text-sm mt-1">{errors.price.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Tipo de propiedad *
+                      </label>
+                      <Select
+                        value={watch('type')}
+                        onValueChange={(value) => setValue('type', value as any)}
+                      >
+                        <SelectTrigger className={errors.type ? 'border-red-500' : ''}>
+                          <SelectValue placeholder="Selecciona el tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {propertyTypes.map((type) => (
+                            <SelectItem key={type.value} value={type.value}>
+                              <div className="flex items-center gap-2">
+                                <type.icon className="h-4 w-4" />
+                                {type.label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.type && (
+                        <p className="text-red-500 text-sm mt-1">{errors.type.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Estado *
+                      </label>
+                      <Select
+                        value={watch('status')}
+                        onValueChange={(value) => setValue('status', value as any)}
+                      >
+                        <SelectTrigger className={errors.status ? 'border-red-500' : ''}>
+                          <SelectValue placeholder="Selecciona el estado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {propertyStatuses.map((status) => (
+                            <SelectItem key={status.value} value={status.value}>
+                              {status.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.status && (
+                        <p className="text-red-500 text-sm mt-1">{errors.status.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Descripción *
+                    </label>
+                    <Textarea
+                      placeholder="Describe las características principales de la propiedad..."
+                      {...register('description')}
+                      rows={4}
+                      className={errors.description ? 'border-red-500' : ''}
+                    />
+                    {errors.description && (
+                      <p className="text-red-500 text-sm mt-1">{errors.description.message}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Ubicación */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MapPin className="h-5 w-5" />
+                    Ubicación
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Dirección completa *
+                    </label>
+                    <Input
+                      placeholder="Av. Larco 123, Miraflores, Lima"
+                      {...register('address')}
+                      className={errors.address ? 'border-red-500' : ''}
+                    />
+                    {errors.address && (
+                      <p className="text-red-500 text-sm mt-1">{errors.address.message}</p>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Distrito/Ubicación *
+                    </label>
+                    <Input
+                      placeholder="Miraflores"
+                      {...register('location')}
+                      className={errors.location ? 'border-red-500' : ''}
+                    />
+                    {errors.location && (
+                      <p className="text-red-500 text-sm mt-1">{errors.location.message}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Detalles de la propiedad */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building className="h-5 w-5" />
+                    Detalles de la propiedad
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Dormitorios *
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder="3"
+                        {...register('bedrooms', { valueAsNumber: true })}
+                        min="0"
+                        className={errors.bedrooms ? 'border-red-500' : ''}
+                      />
+                      {errors.bedrooms && (
+                        <p className="text-red-500 text-sm mt-1">{errors.bedrooms.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Baños *
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder="2"
+                        {...register('bathrooms', { valueAsNumber: true })}
+                        min="0"
+                        className={errors.bathrooms ? 'border-red-500' : ''}
+                      />
+                      {errors.bathrooms && (
+                        <p className="text-red-500 text-sm mt-1">{errors.bathrooms.message}</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Área (m²) *
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder="120"
+                        {...register('area', { valueAsNumber: true })}
+                        min="1"
+                        className={errors.area ? 'border-red-500' : ''}
+                      />
+                      {errors.area && (
+                        <p className="text-red-500 text-sm mt-1">{errors.area.message}</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Imágenes */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Upload className="h-5 w-5" />
+                    Imágenes de la propiedad
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ImageUpload
+                    value={watch('images') || []}
+                    onChange={(urls) => setValue('images', urls)}
+                    maxFiles={20}
+                    bucket="property-images"
+                    folder={`property-${params.id}`}
+                  />
+                  {errors.images && (
+                    <p className="text-red-500 text-sm mt-2">{errors.images.message}</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Características */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Características</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Características actuales */}
+                  <div className="flex flex-wrap gap-2">
+                    {(watch('features') || []).map((feature, index) => (
+                      <Badge key={index} variant="secondary" className="flex items-center gap-2">
+                        {feature}
+                        <button
+                          type="button"
+                          onClick={() => removeFeature(feature)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+
+                  {/* Agregar característica personalizada */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Agregar característica personalizada"
+                      value={newFeature}
+                      onChange={(e) => setNewFeature(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          if (newFeature.trim()) {
+                            addFeature(newFeature.trim())
+                            setNewFeature('')
+                          }
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (newFeature.trim()) {
+                          addFeature(newFeature.trim())
+                          setNewFeature('')
+                        }
+                      }}
+                      variant="outline"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {/* Características comunes */}
+                  <div>
+                    <p className="text-sm text-gray-600 mb-2">Características comunes:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {commonFeatures
+                        .filter(feature => !(watch('features') || []).includes(feature))
+                        .map((feature) => (
+                          <Button
+                            key={feature}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addFeature(feature)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            {feature}
+                          </Button>
+                        ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </form>
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Features */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Características</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {property.features.map((feature, index) => (
-                    <Badge
-                      key={index}
-                      variant="secondary"
-                      className="flex items-center gap-1"
-                    >
-                      {feature}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeFeature(feature)}
-                        className="h-4 w-4 p-0 hover:bg-red-100"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </Badge>
-                  ))}
-                </div>
-
-                <div className="flex gap-2">
-                  <Input
-                    value={newFeature}
-                    onChange={(e) => setNewFeature(e.target.value)}
-                    placeholder="Nueva característica"
-                    className="flex-1"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        addFeature(newFeature)
-                        setNewFeature('')
-                      }
-                    }}
-                  />
-                  <Button
-                    onClick={() => {
-                      addFeature(newFeature)
-                      setNewFeature('')
-                    }}
-                    disabled={!newFeature}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700">Características comunes:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {commonFeatures
-                      .filter(feature => !property.features.includes(feature))
-                      .map((feature, index) => (
-                        <Button
-                          key={index}
-                          variant="outline"
-                          size="sm"
-                          onClick={() => addFeature(feature)}
-                          className="text-xs"
-                        >
-                          + {feature}
-                        </Button>
-                      ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Amenities */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Comodidades</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {property.amenities.map((amenity, index) => (
-                    <Badge
-                      key={index}
-                      variant="outline"
-                      className="flex items-center gap-1"
-                    >
-                      {amenity}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeAmenity(amenity)}
-                        className="h-4 w-4 p-0 hover:bg-red-100"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </Badge>
-                  ))}
-                </div>
-
-                <div className="flex gap-2">
-                  <Input
-                    value={newAmenity}
-                    onChange={(e) => setNewAmenity(e.target.value)}
-                    placeholder="Nueva comodidad"
-                    className="flex-1"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        addAmenity(newAmenity)
-                        setNewAmenity('')
-                      }
-                    }}
-                  />
-                  <Button
-                    onClick={() => {
-                      addAmenity(newAmenity)
-                      setNewAmenity('')
-                    }}
-                    disabled={!newAmenity}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700">Comodidades comunes:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {commonAmenities
-                      .filter(amenity => !property.amenities.includes(amenity))
-                      .map((amenity, index) => (
-                        <Button
-                          key={index}
-                          variant="outline"
-                          size="sm"
-                          onClick={() => addAmenity(amenity)}
-                          className="text-xs"
-                        >
-                          + {amenity}
-                        </Button>
-                      ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Actions */}
+            {/* Acciones */}
             <Card>
               <CardHeader>
                 <CardTitle>Acciones</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
                 <Button
-                  onClick={handleSave}
-                  disabled={isSaving}
+                  onClick={handleSubmit(onSubmit)}
+                  disabled={isSaving || !isValid}
                   className="w-full flex items-center gap-2"
                 >
                   {isSaving ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <LoadingSpinner className="h-4 w-4" />
                   ) : (
                     <Save className="h-4 w-4" />
                   )}
                   {isSaving ? 'Guardando...' : 'Guardar cambios'}
                 </Button>
-                
+
                 <Button
                   variant="outline"
                   onClick={() => router.push(`/properties/${params.id}`)}
-                  className="w-full"
+                  className="w-full flex items-center gap-2"
                 >
+                  <ArrowLeft className="h-4 w-4" />
                   Cancelar
                 </Button>
-                
+
                 <Button
                   variant="destructive"
                   className="w-full flex items-center gap-2"
-                  onClick={() => {
-                    if (confirm('¿Estás seguro de que quieres eliminar esta propiedad?')) {
-                      toast({
-                        title: "Propiedad eliminada",
-                        description: "La propiedad ha sido eliminada exitosamente.",
-                      })
-                      router.push('/properties')
-                    }
-                  }}
+                  onClick={handleDelete}
+                  disabled={isDeleting}
                 >
-                  <Trash2 className="h-4 w-4" />
-                  Eliminar propiedad
+                  {isDeleting ? (
+                    <LoadingSpinner className="h-4 w-4" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  {isDeleting ? 'Eliminando...' : 'Eliminar propiedad'}
                 </Button>
               </CardContent>
             </Card>

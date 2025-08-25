@@ -11,6 +11,9 @@ export interface PropertyFilters {
   maxArea?: number
   location?: string
   status?: string
+  limit?: number
+  sortBy?: string
+  order?: 'asc' | 'desc'
 }
 
 export interface CreatePropertyData {
@@ -75,7 +78,17 @@ export const propertiesService = {
       query = query.eq('status', filters.status)
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false })
+    // Aplicar ordenamiento
+    const sortField = filters?.sortBy || 'created_at'
+    const ascending = filters?.order === 'asc'
+    query = query.order(sortField, { ascending })
+
+    // Aplicar límite si se especifica
+    if (filters?.limit) {
+      query = query.limit(filters.limit)
+    }
+
+    const { data, error } = await query
 
     if (error) throw error
     return data || []

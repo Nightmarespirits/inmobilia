@@ -24,14 +24,22 @@ import {
   Star,
   ChevronLeft,
   ChevronRight,
-  Edit
+  Edit,
+  Eye,
+  Clock
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ImageGallery } from '@/components/ui/image-gallery'
+import { LoadingSpinner } from '@/components/ui/spinner'
+import { PropertyCardSkeleton } from '@/components/ui/loading-states'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
-import Image from 'next/image'
+import { getPropertyById } from '@/lib/services/properties'
+import { toggleFavorite, isFavorite } from '@/lib/services/favorites'
+import type { Property } from '@/lib/supabase'
 
 // Mock property data
 const mockProperty = {
@@ -101,15 +109,48 @@ export default function PropertyDetailPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   
-  const [property, setProperty] = useState(mockProperty)
+  const [property, setProperty] = useState<Property | null>(null)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isFavorited, setIsFavorited] = useState(false)
+  const [isToggleFavorite, setIsToggleFavorite] = useState(false)
   const [showContactForm, setShowContactForm] = useState(false)
 
+  // Cargar propiedad desde Supabase
+  useEffect(() => {
+    const loadProperty = async () => {
+      try {
+        setIsLoading(true)
+        const propertyData = await getPropertyById(params.id as string)
+        setProperty(propertyData)
+        
+        // Verificar si está en favoritos
+        if (user) {
+          const favoriteStatus = await isFavorite(user.id, propertyData.id)
+          setIsFavorited(favoriteStatus)
+        }
+      } catch (error) {
+        console.error('Error loading property:', error)
+        toast({
+          title: "Error",
+          description: "No se pudo cargar la propiedad.",
+          variant: "destructive",
+        })
+        router.push('/properties')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (params.id) {
+      loadProperty()
+    }
+  }, [params.id, user, router, toast])
+
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('es-PE', {
+    return new Intl.NumberFormat('es-US', {
       style: 'currency',
-      currency: 'PEN',
+      currency: 'USD',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(price)
@@ -141,43 +182,69 @@ export default function PropertyDetailPage() {
     }
   }
 
-  const handleFavoriteToggle = () => {
+  const handleFavoriteToggle = async () => {
     if (!user) {
       toast({
         title: "Inicia sesión",
-        description: "Debes iniciar sesión para guardar propiedades favoritas.",
+        description: "Debes iniciar sesión para agregar a favoritos.",
         variant: "destructive",
       })
       return
     }
 
-    setProperty(prev => ({ ...prev, isFavorite: !prev.isFavorite }))
-    toast({
-      title: property.isFavorite ? "Eliminado de favoritos" : "Agregado a favoritos",
-      description: property.isFavorite 
-        ? "La propiedad se eliminó de tus favoritos." 
-        : "La propiedad se agregó a tus favoritos.",
-    })
+    if (!property) return
+    
+    try {
+      setIsToggleFavorite(true)
+      await toggleFavorite(user.id, property.id)
+      setIsFavorited(!isFavorited)
+      
+      toast({
+        title: isFavorited ? "Eliminado de favoritos" : "Agregado a favoritos",
+        description: isFavorited ? "La propiedad se eliminó de tus favoritos." : "La propiedad se agregó a tus favoritos.",
+      })
+    } catch (error) {
+      console.error('Error toggling favorite:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar favoritos.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsToggleFavorite(false)
+    }
   }
 
   const handleShare = async () => {
+    if (!property) return
+    
+    const shareData = {
+      title: property.title,
+      text: `Mira esta propiedad: ${property.title} - ${formatPrice(property.price)}`,
+      url: window.location.href,
+    }
+    
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: property.title,
-          text: `Mira esta propiedad: ${property.title} en ${property.location}`,
-          url: window.location.href,
-        })
+        await navigator.share(shareData)
       } catch (error) {
         console.log('Error sharing:', error)
       }
     } else {
-      // Fallback: copy to clipboard
-      navigator.clipboard.writeText(window.location.href)
-      toast({
-        title: "Enlace copiado",
-        description: "El enlace de la propiedad se copió al portapapeles.",
-      })
+      // Fallback: copiar al portapapeles
+      try {
+        await navigator.clipboard.writeText(window.location.href)
+        toast({
+          title: "Enlace copiado",
+          description: "El enlace de la propiedad se copió al portapapeles.",
+        })
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "No se pudo copiar el enlace.",
+          variant: "destructive",
+        })
+      }
     }
   }
 
@@ -202,6 +269,31 @@ export default function PropertyDetailPage() {
   const prevImage = () => {
     setCurrentImageIndex((prev) => 
       prev === 0 ? property.images.length - 1 : prev - 1
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="container mx-auto px-4 py-8">
+          <PropertyCardSkeleton />
+        </div>
+      </div>
+    )
+  }
+
+  if (!property) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Propiedad no encontrada</h2>
+          <p className="text-gray-600 mb-4">La propiedad que buscas no existe o ha sido eliminada.</p>
+          <Button onClick={() => router.push('/properties')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Volver a propiedades
+          </Button>
+        </div>
+      </div>
     )
   }
 
@@ -252,71 +344,39 @@ export default function PropertyDetailPage() {
             {/* Image Gallery */}
             <Card>
               <CardContent className="p-0">
-                <div className="relative h-96 lg:h-[500px] overflow-hidden rounded-t-lg">
-                  <Image
-                    src={property.images[currentImageIndex]}
+                {/* Image Gallery */}
+                <div className="relative">
+                  <ImageGallery
+                    images={property.images}
                     alt={property.title}
-                    fill
-                    className="object-cover"
+                    className="h-96 md:h-[500px]"
                   />
                   
-                  {/* Navigation Arrows */}
-                  {property.images.length > 1 && (
-                    <>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={prevImage}
-                        className="absolute left-4 top-1/2 transform -translate-y-1/2 opacity-80 hover:opacity-100"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={nextImage}
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 opacity-80 hover:opacity-100"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                  
-                  {/* Image Counter */}
-                  <div className="absolute bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
-                    {currentImageIndex + 1} / {property.images.length}
-                  </div>
-                  
-                  {/* Status Badge */}
-                  <div className="absolute top-4 left-4">
-                    <Badge className={`${getStatusColor(property.status)} text-white border-0`}>
-                      {getStatusText(property.status)}
-                    </Badge>
+                  {/* Action buttons */}
+                  <div className="absolute top-4 right-4 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={isFavorited ? "default" : "secondary"}
+                      onClick={handleFavoriteToggle}
+                      disabled={isToggleFavorite}
+                      className="bg-white/90 hover:bg-white text-gray-900"
+                    >
+                      {isToggleFavorite ? (
+                        <LoadingSpinner className="h-4 w-4" />
+                      ) : (
+                        <Heart className={`h-4 w-4 ${isFavorited ? 'fill-red-500 text-red-500' : ''}`} />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleShare}
+                      className="bg-white/90 hover:bg-white text-gray-900"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                
-                {/* Thumbnail Gallery */}
-                {property.images.length > 1 && (
-                  <div className="flex gap-2 p-4 overflow-x-auto">
-                    {property.images.map((image, index) => (
-                      <button
-                        key={index}
-                        onClick={() => setCurrentImageIndex(index)}
-                        className={`relative w-20 h-16 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${
-                          index === currentImageIndex ? 'border-primary' : 'border-gray-200'
-                        }`}
-                      >
-                        <Image
-                          src={image}
-                          alt={`Vista ${index + 1}`}
-                          fill
-                          className="object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
               </CardContent>
             </Card>
 
@@ -328,7 +388,7 @@ export default function PropertyDetailPage() {
                     <CardTitle className="text-2xl lg:text-3xl">{property.title}</CardTitle>
                     <div className="flex items-center gap-2 text-gray-600 mt-2">
                       <MapPin className="h-4 w-4" />
-                      <span>{property.fullAddress}</span>
+                      <span>{property.fullAddress || property.address}</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -336,7 +396,7 @@ export default function PropertyDetailPage() {
                       {formatPrice(property.price)}
                     </div>
                     <div className="text-sm text-gray-600">
-                      {property.views.toLocaleString()} visualizaciones
+                      {(property.views || 0).toLocaleString()} visualizaciones
                     </div>
                   </div>
                 </div>
@@ -369,13 +429,15 @@ export default function PropertyDetailPage() {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <Car className="h-5 w-5 text-primary" />
-                    <div>
-                      <div className="font-semibold">{property.parkingSpaces}</div>
-                      <div className="text-sm text-gray-600">Estacionamientos</div>
+                  {property.parkingSpaces && (
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Car className="h-5 w-5 text-primary" />
+                      <div>
+                        <div className="font-semibold">{property.parkingSpaces}</div>
+                        <div className="text-sm text-gray-600">Estacionamientos</div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -390,35 +452,40 @@ export default function PropertyDetailPage() {
                 <div>
                   <h3 className="text-lg font-semibold mb-3">Características</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {property.features.map((feature, index) => {
-                      const Icon = feature.icon
-                      return (
-                        <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
-                          <Icon className="h-5 w-5 text-primary" />
-                          <div>
-                            <div className="font-medium">{feature.label}</div>
-                            <div className="text-sm text-gray-600">{feature.value}</div>
-                          </div>
+                    {property.features.map((feature, index) => (
+                      <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
+                        <Shield className="h-5 w-5 text-primary" />
+                        <div>
+                          <div className="font-medium">{feature}</div>
                         </div>
-                      )
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
 
                 {/* Additional Info */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
-                  <div>
-                    <div className="text-sm text-gray-600">Piso</div>
-                    <div className="font-semibold">{property.floor} de {property.totalFloors}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-600">Año de construcción</div>
-                    <div className="font-semibold">{property.yearBuilt}</div>
-                  </div>
+                  {(property.floor || property.totalFloors) && (
+                    <div>
+                      <div className="text-sm text-gray-600">Piso</div>
+                      <div className="font-semibold">
+                        {property.floor && property.totalFloors 
+                          ? `${property.floor} de ${property.totalFloors}`
+                          : property.floor || property.totalFloors
+                        }
+                      </div>
+                    </div>
+                  )}
+                  {property.yearBuilt && (
+                    <div>
+                      <div className="text-sm text-gray-600">Año de construcción</div>
+                      <div className="font-semibold">{property.yearBuilt}</div>
+                    </div>
+                  )}
                   <div>
                     <div className="text-sm text-gray-600">Publicado</div>
                     <div className="font-semibold">
-                      {new Date(property.publishedDate).toLocaleDateString('es-PE')}
+                      {new Date(property.publishedDate || property.created_at).toLocaleDateString('es-PE')}
                     </div>
                   </div>
                 </div>
@@ -432,18 +499,25 @@ export default function PropertyDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {property.nearbyPlaces.map((place, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <MapPin className="h-4 w-4 text-primary" />
-                        <div>
-                          <div className="font-medium">{place.name}</div>
-                          <div className="text-sm text-gray-600 capitalize">{place.type}</div>
+                  {(property as any).nearbyPlaces && (property as any).nearbyPlaces.length > 0 ? (
+                    (property as any).nearbyPlaces.map((place: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <MapPin className="h-4 w-4 text-primary" />
+                          <div>
+                            <div className="font-medium">{place.name}</div>
+                            <div className="text-sm text-gray-600 capitalize">{place.type}</div>
+                          </div>
                         </div>
+                        <Badge variant="outline">{place.distance}</Badge>
                       </div>
-                      <Badge variant="outline">{place.distance}</Badge>
+                    ))
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      <MapPin className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                      <p>No hay información de lugares cercanos disponible</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -451,30 +525,36 @@ export default function PropertyDetailPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Agent Card */}
+            {/* Agent Info */}
             <Card>
               <CardHeader>
                 <CardTitle>Agente inmobiliario</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative w-16 h-16">
-                    <Image
-                      src={property.agent.avatar}
-                      alt={property.agent.name}
-                      fill
-                      className="rounded-full object-cover"
-                    />
-                  </div>
+              <CardContent>
+                <div className="flex items-center gap-4 mb-4">
+                  <Avatar className="w-16 h-16">
+                    <AvatarImage src={property.agent?.avatar} alt={property.agent?.name} />
+                    <AvatarFallback>
+                      {property.agent?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'AG'}
+                    </AvatarFallback>
+                  </Avatar>
                   <div>
-                    <h4 className="font-semibold text-lg">{property.agent.name}</h4>
-                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                      <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                      <span>{property.agent.rating}</span>
-                      <span>•</span>
-                      <span>{property.agent.totalSales} ventas</span>
-                    </div>
-                    <div className="text-sm text-gray-600">{property.agent.experience} de experiencia</div>
+                    <h4 className="font-semibold text-lg">{property.agent?.name || 'Agente no disponible'}</h4>
+                    {property.agent?.rating && (
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        <span>{property.agent?.rating}</span>
+                        {(property.agent as any)?.totalSales && (
+                          <>
+                            <span>•</span>
+                            <span>{(property.agent as any).totalSales} ventas</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {(property.agent as any)?.experience && (
+                      <div className="text-sm text-gray-600">{(property.agent as any).experience} de experiencia</div>
+                    )}
                   </div>
                 </div>
 
@@ -488,18 +568,28 @@ export default function PropertyDetailPage() {
                   </Button>
                   
                   <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" size="sm" className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex items-center gap-2"
+                      onClick={() => property.agent?.phone && window.open(`tel:${property.agent.phone}`)}
+                    >
                       <Phone className="h-4 w-4" />
                       Llamar
                     </Button>
-                    <Button variant="outline" size="sm" className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex items-center gap-2"
+                      onClick={() => property.agent?.email && window.open(`mailto:${property.agent.email}`)}
+                    >
                       <Mail className="h-4 w-4" />
                       Email
                     </Button>
                   </div>
                   
                   {/* Edit button for agents */}
-                  {user && user.role === 'agent' && (
+                  {user && (user.role === 'agent' || user.id === property.agent_id) && (
                     <Button 
                       onClick={() => router.push(`/properties/${params.id}/edit`)}
                       variant="secondary"
@@ -560,6 +650,21 @@ export default function PropertyDetailPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-600">Estado:</span>
                   <Badge variant="outline">{getStatusText(property.status)}</Badge>
+                </div>
+                {property.created_at && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Publicado:</span>
+                    <span className="text-sm">
+                      {new Date(property.created_at).toLocaleDateString('es-ES')}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Vistas:</span>
+                  <div className="flex items-center gap-1">
+                    <Eye className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm">{property.views || 0}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Search, Filter, Grid, List, MapPin, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,11 +9,15 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PropertyCard } from '@/components/property/property-card'
+import { ContactModal } from '@/components/property/contact-modal'
 import { SearchFilters } from '@/components/search/search-filters'
 import { useAuth } from '@/hooks/use-auth'
+import { useContactRedirect } from '@/hooks/use-contact-redirect'
 import { getProperties, searchProperties } from '@/lib/services/properties'
 import { toggleFavorite, isFavorite } from '@/lib/services/favorites'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
+import { contactTrackingService } from '@/lib/services/contact-tracking'
 import Link from 'next/link'
 
 // Interfaces para propiedades
@@ -47,8 +52,27 @@ export default function PropertiesPage() {
   const [currentFilters, setCurrentFilters] = useState({})
   const [favoriteProperties, setFavoriteProperties] = useState<Set<string>>(new Set())
   
+  // Contact Modal State
+  const [contactModal, setContactModal] = useState<{
+    isOpen: boolean
+    propertyId: string
+    propertyTitle: string
+    agentId: string
+    agentName?: string
+    agentAvatar?: string
+  }>({
+    isOpen: false,
+    propertyId: '',
+    propertyTitle: '',
+    agentId: '',
+  })
+  
   const { user } = useAuth()
   const { toast } = useToast()
+  const router = useRouter()
+  
+  // Hook para manejar redirecciones automáticas post-login
+  useContactRedirect()
 
   // Cargar propiedades desde Supabase
   useEffect(() => {
@@ -125,55 +149,134 @@ export default function PropertiesPage() {
     })
     
     setFilteredProperties(filtered)
-  }, [properties, searchTerm, sortBy, currentFilters])
+  }, [properties, searchTerm, sortBy, favoriteProperties]) // Manejar toggle de favoritos
 
   const handleFavoriteToggle = async (propertyId: string) => {
     if (!user) {
       toast({
         title: "Inicia sesión",
-        description: "Debes iniciar sesión para guardar favoritos.",
+        description: "Debes iniciar sesión para agregar favoritos.",
         variant: "destructive",
       })
       return
     }
 
     try {
-      const result = await toggleFavorite(user.id, propertyId)
+      const wasFavorite = favoriteProperties.has(propertyId)
       
-      // Actualizar estado local
+      // Actualizar UI optimistamente
       const newFavorites = new Set(favoriteProperties)
-      if (result.added) {
-        newFavorites.add(propertyId)
-        toast({
-          title: "Agregado a favoritos",
-          description: "La propiedad se agregó a tus favoritos.",
-        })
-      } else {
+      if (wasFavorite) {
         newFavorites.delete(propertyId)
-        toast({
-          title: "Removido de favoritos",
-          description: "La propiedad se removió de tus favoritos.",
-        })
+      } else {
+        newFavorites.add(propertyId)
       }
-      
       setFavoriteProperties(newFavorites)
       
       // Actualizar propiedades
-      setProperties(prev => 
-        prev.map(property => 
-          property.id === propertyId 
-            ? { ...property, isFavorite: result.added }
-            : property
-        )
-      )
+      setProperties(prev => prev.map(prop => 
+        prop.id === propertyId 
+          ? { ...prop, isFavorite: !wasFavorite }
+          : prop
+      ))
+
+      // Hacer llamada a la API
+      await toggleFavorite(user.id, propertyId)
+      
+      toast({
+        title: wasFavorite ? "Removido de favoritos" : "Agregado a favoritos",
+        description: `La propiedad ha sido ${wasFavorite ? 'removida de' : 'agregada a'} tus favoritos.`,
+      })
+      
     } catch (error) {
       console.error('Error toggling favorite:', error)
+      
+      // Revertir cambio optimista en caso de error
+      const revertFavorites = new Set(favoriteProperties)
+      if (favoriteProperties.has(propertyId)) {
+        revertFavorites.delete(propertyId)
+      } else {
+        revertFavorites.add(propertyId)
+      }
+      setFavoriteProperties(revertFavorites)
+      
+      setProperties(prev => prev.map(prop => 
+        prop.id === propertyId 
+          ? { ...prop, isFavorite: favoriteProperties.has(propertyId) }
+          : prop
+      ))
+      
       toast({
         title: "Error",
         description: "No se pudo actualizar el favorito. Inténtalo de nuevo.",
         variant: "destructive",
       })
     }
+  }
+
+  // Manejar vista de detalles
+  const handleViewDetails = (propertyId: string) => {
+    router.push(`/properties/${propertyId}`)
+  }
+
+  // Manejar contacto con agente - Flujo simplificado
+  const handleContact = async (propertyId: string, agentId: string, propertyTitle: string) => {
+    // Si el usuario no está autenticado, guardar intención y redirigir a login
+    if (!user) {
+      // Guardar intención de contacto
+      contactTrackingService.saveContactIntent(propertyId, agentId, propertyTitle)
+      
+      // Notificar al usuario
+      toast({
+        title: "Inicia sesión para continuar",
+        description: "Te redirigiremos para que puedas contactar al agente.",
+      })
+      
+      // Redirigir a login
+      router.push('/auth/login')
+      return
+    }
+
+    // Si el usuario está autenticado, mostrar modal simplificado
+    try {
+      // Obtener información del agente
+      const { data: agentData, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .eq('id', agentId)
+        .single()
+
+      if (error) {
+        console.error('Error fetching agent data:', error)
+      }
+
+      // Abrir modal de contacto simplificado
+      setContactModal({
+        isOpen: true,
+        propertyId,
+        propertyTitle,
+        agentId,
+        agentName: agentData?.full_name || 'Agente Inmobiliario',
+        agentAvatar: agentData?.avatar_url,
+      })
+    } catch (error) {
+      console.error('Error opening contact modal:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo cargar la información del agente.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Cerrar modal de contacto
+  const handleCloseContactModal = () => {
+    setContactModal({
+      isOpen: false,
+      propertyId: '',
+      propertyTitle: '',
+      agentId: '',
+    })
   }
 
   const handleFiltersApply = async (filters: any) => {
@@ -360,14 +463,16 @@ export default function PropertiesPage() {
                   title={property.title}
                   location={property.location}
                   price={property.price}
-                  type={property.type}
-                  status={property.status}
                   bedrooms={property.bedrooms}
                   bathrooms={property.bathrooms}
                   area={property.area}
-                  image={property.images[0]}
+                  image={property.images[0] || '/placeholder-property.jpg'}
+                  status={property.status}
+                  agentId={property.agent_id || property.agentId || ''}
                   isFavorite={property.isFavorite}
                   onFavoriteToggle={handleFavoriteToggle}
+                  onView={handleViewDetails}
+                  onContact={handleContact}
                   className={viewMode === 'list' ? 'flex-row' : ''}
                 />
               </motion.div>
@@ -375,6 +480,17 @@ export default function PropertiesPage() {
           </motion.div>
         )}
       </div>
+
+      {/* Contact Modal */}
+      <ContactModal
+        isOpen={contactModal.isOpen}
+        onClose={handleCloseContactModal}
+        propertyId={contactModal.propertyId}
+        propertyTitle={contactModal.propertyTitle}
+        agentId={contactModal.agentId}
+        agentName={contactModal.agentName}
+        agentAvatar={contactModal.agentAvatar}
+      />
     </div>
   )
 }

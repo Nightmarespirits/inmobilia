@@ -8,7 +8,8 @@ const nextConfig = {
       'via.placeholder.com',
       'maps.googleapis.com',
       'api.mapbox.com',
-      'api.dicebear.com'
+      'api.dicebear.com',
+      'xlhcsfzkjyviomgwdfgf.supabase.co'
     ],
     remotePatterns: [
       {

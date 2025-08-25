@@ -1,9 +1,9 @@
 'use client'
 
 import React from 'react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Home, 
@@ -16,25 +16,108 @@ import {
   Bell,
   Settings,
   LogOut,
-  Building2
+  Building2,
+  Plus
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useAuth } from '@/hooks/use-auth'
+import { notificationsService } from '@/lib/services/notifications'
 
-const navigation = [
+// Navegación base disponible para todos
+const baseNavigation = [
   { name: 'Inicio', href: '/', icon: Home },
   { name: 'Propiedades', href: '/properties', icon: Building2 },
   { name: 'Búsqueda', href: '/search', icon: Search },
+]
+
+// Navegación para usuarios autenticados
+const authenticatedNavigation = [
   { name: 'Favoritos', href: '/favorites', icon: Heart },
-  { name: 'Mensajes', href: '/messages', icon: MessageCircle, badge: 3 },
+  { name: 'Mensajes', href: '/messages', icon: MessageCircle },
 ]
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [notifications, setNotifications] = useState<any[]>([])
   const { user, logout } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
+
+  // Combinar navegación basada en estado de autenticación
+  const navigation = user 
+    ? [...baseNavigation, ...authenticatedNavigation]
+    : baseNavigation
+
+  // Cargar notificaciones cuando el usuario cambie
+  useEffect(() => {
+    const loadNotifications = async () => {
+      if (!user) {
+        setNotifications([])
+        return
+      }
+
+      try {
+        const userNotifications = await notificationsService.getUserNotifications(user.id)
+        setNotifications(userNotifications)
+      } catch (error) {
+        console.error('Error loading notifications:', error)
+      }
+    }
+
+    loadNotifications()
+
+    // Suscribirse a notificaciones en tiempo real
+    if (user) {
+      const subscription = notificationsService.subscribeToNotifications(
+        user.id,
+        (payload) => {
+          loadNotifications() // Recargar notificaciones cuando llegue una nueva
+        }
+      )
+
+      return () => {
+        subscription.unsubscribe()
+      }
+    }
+  }, [user])
+
+  // Obtener notificaciones basadas en rol del usuario
+  const getNotificationCount = () => {
+    if (!user) return 0
+    
+    // Para agentes: contar mensajes no leídos de clientes interesados
+    if (user.role === 'agent') {
+      return notifications.filter(n => n.type === 'message' && !n.read).length
+    }
+    
+    // Para compradores: contar nuevas propiedades y respuestas de agentes
+    return notifications.filter(n => 
+      (n.type === 'new_property' || n.type === 'agent_response') && !n.read
+    ).length
+  }
+
+  // Cerrar menús cuando cambia la ruta
+  useEffect(() => {
+    setIsMenuOpen(false)
+    setIsProfileOpen(false)
+  }, [pathname])
+
+  // Cerrar menús al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element
+      if (target && !target.closest('[data-profile-dropdown]')) {
+        setIsProfileOpen(false)
+      }
+    }
+    if (isProfileOpen) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [isProfileOpen])
 
   const handleLogin = () => {
     router.push('/auth/login')
@@ -73,9 +156,9 @@ export function Header() {
               >
                 <item.icon className="h-4 w-4" />
                 <span>{item.name}</span>
-                {item.badge && (
+                {item.name === 'Mensajes' && getNotificationCount() > 0 && (
                   <Badge variant="destructive" className="ml-1 h-5 w-5 rounded-full p-0 text-xs">
-                    {item.badge}
+                    {getNotificationCount()}
                   </Badge>
                 )}
               </Link>
@@ -89,30 +172,29 @@ export function Header() {
                 {/* Notifications */}
                 <Button variant="ghost" size="icon" className="relative">
                   <Bell className="h-5 w-5" />
-                  <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
-                    2
-                  </Badge>
+                  {getNotificationCount() > 0 && (
+                    <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
+                      {getNotificationCount()}
+                    </Badge>
+                  )}
                 </Button>
 
                 {/* Profile Dropdown */}
-                <div className="relative">
+                <div className="relative" data-profile-dropdown>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setIsProfileOpen(!isProfileOpen)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsProfileOpen(!isProfileOpen)
+                    }}
                     className="relative"
                   >
-                    <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                      {user.avatar ? (
-                        <img
-                          src={user.avatar}
-                          alt={user.name}
-                          className="h-8 w-8 rounded-full object-cover"
-                        />
-                      ) : (
-                        <User className="h-4 w-4" />
-                      )}
-                    </div>
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                        {user.email?.charAt(0).toUpperCase() || user.full_name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
                   </Button>
 
                   <AnimatePresence>
@@ -121,13 +203,13 @@ export function Header() {
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="absolute right-0 mt-2 w-56 rounded-md border bg-popover p-1 shadow-md"
+                        className="absolute right-0 top-full mt-2 w-56 rounded-md border bg-white p-1 shadow-lg z-50"
                       >
                         <div className="px-3 py-2 border-b">
-                          <p className="text-sm font-medium">{user.name}</p>
+                          <p className="text-sm font-medium">{user.full_name || user.name}</p>
                           <p className="text-xs text-muted-foreground">{user.email}</p>
-                          <Badge variant="secondary" className="mt-1 text-xs">
-                            {user.role}
+                          <Badge variant="secondary" className="mt-1 text-xs capitalize">
+                            {user.role === 'buyer' ? 'Comprador' : 'Agente'}
                           </Badge>
                         </div>
                         
@@ -137,9 +219,27 @@ export function Header() {
                             className="flex items-center px-3 py-2 text-sm rounded-sm hover:bg-accent"
                             onClick={() => setIsProfileOpen(false)}
                           >
+                            <Home className="mr-2 h-4 w-4" />
+                            Dashboard
+                          </Link>
+                          <Link
+                            href="/profile"
+                            className="flex items-center px-3 py-2 text-sm rounded-sm hover:bg-accent"
+                            onClick={() => setIsProfileOpen(false)}
+                          >
                             <User className="mr-2 h-4 w-4" />
                             Mi Perfil
                           </Link>
+                          {user.role === 'agent' && (
+                            <Link
+                              href="/properties/create"
+                              className="flex items-center px-3 py-2 text-sm rounded-sm hover:bg-accent"
+                              onClick={() => setIsProfileOpen(false)}
+                            >
+                              <Plus className="mr-2 h-4 w-4" />
+                              Nueva Propiedad
+                            </Link>
+                          )}
                           <Link
                             href="/settings"
                             className="flex items-center px-3 py-2 text-sm rounded-sm hover:bg-accent"
@@ -203,9 +303,9 @@ export function Header() {
                   >
                     <item.icon className="h-4 w-4" />
                     <span>{item.name}</span>
-                    {item.badge && (
+                    {item.name === 'Mensajes' && getNotificationCount() > 0 && (
                       <Badge variant="destructive" className="ml-auto h-5 w-5 rounded-full p-0 text-xs">
-                        {item.badge}
+                        {getNotificationCount()}
                       </Badge>
                     )}
                   </Link>

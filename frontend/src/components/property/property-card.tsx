@@ -17,9 +17,11 @@ interface PropertyCardProps {
   area: number
   image: string
   status: 'available' | 'sold' | 'rented' | 'pending'
+  agentId: string
   isFavorite?: boolean
   onFavoriteToggle?: (id: string) => void
   onView?: (id: string) => void
+  onContact?: (propertyId: string, agentId: string, propertyTitle: string) => void
   className?: string
 }
 
@@ -33,9 +35,11 @@ export function PropertyCard({
   area,
   image,
   status,
+  agentId,
   isFavorite = false,
   onFavoriteToggle,
   onView,
+  onContact,
   className
 }: PropertyCardProps) {
   const formatPrice = (price: number) => {
@@ -153,7 +157,11 @@ export function PropertyCard({
               <Eye className="h-4 w-4 mr-2" />
               Ver Detalles
             </Button>
-            <Button size="sm" className="flex-1">
+            <Button 
+              size="sm" 
+              className="flex-1"
+              onClick={() => onContact?.(id, agentId, title)}
+            >
               Contactar
             </Button>
           </div>

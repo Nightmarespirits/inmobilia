@@ -1,71 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Search, MapPin, Home, TrendingUp, Users, Shield, Zap, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { useContactRedirect } from '@/hooks/use-contact-redirect'
+import { useToast } from '@/hooks/use-toast'
 
 import { SearchFilters } from '@/components/search/search-filters'
 import { PropertyCard } from '@/components/property/property-card'
 import { TestimonialCard } from '@/components/testimonials/testimonial-card'
-
-// Datos de ejemplo para el MVP
-const featuredProperties = [
-  {
-    id: '1',
-    title: 'Casa Moderna en La Molina',
-    price: 450000,
-    type: 'Venta',
-    bedrooms: 3,
-    bathrooms: 2,
-    area: 180,
-    location: 'La Molina, Lima',
-    images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400&h=300&fit=crop'],
-    features: ['Piscina', 'Jardín', 'Garaje'],
-    agent: {
-      name: 'María González',
-      avatar: '/images/agent-1.jpg',
-      rating: 4.9
-    }
-  },
-  {
-    id: '2',
-    title: 'Departamento Ejecutivo San Isidro',
-    price: 2800,
-    type: 'Alquiler',
-    bedrooms: 2,
-    bathrooms: 2,
-    area: 95,
-    location: 'San Isidro, Lima',
-    images: ['https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400&h=300&fit=crop'],
-    features: ['Vista al mar', 'Gimnasio', 'Seguridad 24h'],
-    agent: {
-      name: 'Carlos Mendoza',
-      avatar: '/images/agent-2.jpg',
-      rating: 4.8
-    }
-  },
-  {
-    id: '3',
-    title: 'Casa de Campo en Cieneguilla',
-    price: 320000,
-    type: 'Venta',
-    bedrooms: 4,
-    bathrooms: 3,
-    area: 250,
-    location: 'Cieneguilla, Lima',
-    images: ['https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=400&h=300&fit=crop'],
-    features: ['Piscina', 'Quincho', 'Área verde'],
-    agent: {
-      name: 'Ana Rodríguez',
-      avatar: '/images/agent-3.jpg',
-      rating: 4.7
-    }
-  }
-]
+import { ContactModal } from '@/components/property/contact-modal'
+import { LoadingSpinner } from '@/components/ui/spinner'
+import { getProperties } from '@/lib/services/properties'
+import { Property } from '@/lib/supabase'
+import { contactTrackingService } from '@/lib/services/contact-tracking'
 
 const testimonials = [
   {
@@ -132,13 +85,98 @@ const features = [
 ]
 
 export default function HomePage() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchType, setSearchType] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [featuredProperties, setFeaturedProperties] = useState<Property[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [contactModal, setContactModal] = useState<{
+    isOpen: boolean
+    propertyId: string
+    propertyTitle: string
+    agentId: string
+    agentName?: string
+    agentAvatar?: string
+  }>({
+    isOpen: false,
+    propertyId: '',
+    propertyTitle: '',
+    agentId: '',
+  })
+
+  const router = useRouter()
+  const { toast } = useToast()
+
+  // Hook para manejar redirecciones automáticas post-login
+  useContactRedirect()
+
+  // Cargar propiedades destacadas al montar el componente
+  useEffect(() => {
+    const loadFeaturedProperties = async () => {
+      try {
+        setIsLoading(true)
+        const properties = await getProperties({
+          limit: 6, // Solo mostrar 6 propiedades destacadas
+          sortBy: 'created_at',
+          order: 'desc'
+        })
+        
+        if (properties && properties.length >= 0) {
+          setFeaturedProperties(properties)
+        }
+      } catch (error) {
+        console.error('Error loading featured properties:', error)
+        toast({
+          title: "Error",
+          description: "Error al cargar propiedades destacadas.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadFeaturedProperties()
+  }, [toast])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implementar lógica de búsqueda
-    console.log('Búsqueda:', { query: searchQuery, type: searchType })
+    // Redirigir a página de búsqueda con el término
+    if (searchTerm.trim()) {
+      router.push(`/properties?search=${encodeURIComponent(searchTerm.trim())}`)
+    }
+  }
+
+  const handleViewProperty = (propertyId: string) => {
+    router.push(`/properties/${propertyId}`)
+  }
+
+  const handleContactProperty = async (propertyId: string) => {
+    const property = featuredProperties.find(p => p.id === propertyId)
+    if (!property) return
+
+    // Guardar intención de contacto si no está autenticado
+    contactTrackingService.saveContactIntent(
+      property.id,
+      property.agent_id,
+      property.title
+    )
+
+    setContactModal({
+      isOpen: true,
+      propertyId: property.id,
+      propertyTitle: property.title,
+      agentId: property.agent_id,
+      agentName: property.agent?.name,
+      agentAvatar: property.agent?.avatar
+    })
+  }
+
+  const handleCloseContactModal = () => {
+    setContactModal({
+      isOpen: false,
+      propertyId: '',
+      propertyTitle: '',
+      agentId: '',
+    })
   }
 
   return (
@@ -177,8 +215,8 @@ export default function HomePage() {
                   <Input
                     type="text"
                     placeholder="Busca por ubicación, tipo de propiedad o características..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                     className="bg-white/90 border-0 text-gray-900 placeholder-gray-500 h-12 text-lg"
                   />
                 </div>
@@ -246,32 +284,71 @@ export default function HomePage() {
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {featuredProperties.map((property, index) => (
-              <motion.div
-                key={property.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                viewport={{ once: true }}
-              >
-                <PropertyCard 
-                  id={property.id}
-                  title={property.title}
-                  location={property.location}
-                  price={property.price}
-                  bedrooms={property.bedrooms}
-                  bathrooms={property.bathrooms}
-                  area={property.area}
-                  image={property.images[0] || '/images/placeholder.jpg'}
-                  status="available"
-                />
-              </motion.div>
-            ))}
-          </div>
+          {/* Loading State */}
+          {isLoading ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="animate-pulse">
+                  <Card className="overflow-hidden">
+                    <div className="h-48 bg-gray-200"></div>
+                    <CardHeader className="space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+                      <div className="flex gap-2">
+                        <div className="h-4 bg-gray-200 rounded w-16"></div>
+                        <div className="h-4 bg-gray-200 rounded w-16"></div>
+                        <div className="h-4 bg-gray-200 rounded w-16"></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              ))}
+            </div>
+          ) : featuredProperties.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {featuredProperties.map((property, index) => (
+                <motion.div
+                  key={property.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: index * 0.1 }}
+                  viewport={{ once: true }}
+                >
+                  <PropertyCard 
+                    id={property.id}
+                    title={property.title}
+                    location={property.location}
+                    price={property.price}
+                    bedrooms={property.bedrooms}
+                    bathrooms={property.bathrooms}
+                    area={property.area}
+                    image={property.images[0] || '/images/placeholder.jpg'}
+                    status="available"
+                    agentId={property.agent_id}
+                    onView={() => handleViewProperty(property.id)}
+                    onContact={() => handleContactProperty(property.id)}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Home className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No hay propiedades disponibles</h3>
+              <p className="text-gray-600">Vuelve más tarde para ver nuevas propiedades destacadas.</p>
+            </div>
+          )}
 
           <div className="text-center mt-12">
-            <Button size="lg" variant="outline" className="px-8">
+            <Button 
+              size="lg" 
+              variant="outline" 
+              className="px-8"
+              onClick={() => router.push('/properties')}
+            >
               Ver Todas las Propiedades
             </Button>
           </div>
@@ -376,22 +453,45 @@ export default function HomePage() {
             className="max-w-3xl mx-auto"
           >
             <h2 className="text-3xl md:text-4xl font-bold mb-6">
-              ¿Listo para Revolucionar tu Negocio Inmobiliario?
+              ¿Listo para Transformar tu Experiencia Inmobiliaria?
             </h2>
             <p className="text-xl mb-8 text-blue-100">
-              Únete a miles de profesionales que ya están usando PropTech Nexus para crecer sus negocios
+              Encuentra la propiedad de tus sueños o únete como agente profesional para crecer tu negocio
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" variant="secondary" className="px-8">
-                Comenzar Gratis
+              <Button 
+                size="lg" 
+                variant="secondary" 
+                className="px-8 py-4 bg-white text-primary-600 hover:bg-gray-100 hover:text-primary-700 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+                onClick={() => router.push('/search')}
+              >
+              Buscar Propiedades
               </Button>
-              <Button size="lg" variant="outline" className="px-8 border-white text-white hover:bg-white hover:text-primary-600">
-                Solicitar Demo
+              <Button 
+                size="lg" 
+                className="px-8 py-4 bg-yellow-500 text-primary-900 hover:bg-yellow-400 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 border-0"
+                onClick={() => router.push('/auth/register?type=agent')}
+              >
+                Comienza Gratis
               </Button>
             </div>
+            <p className="text-sm text-blue-200 mt-4">
+              <span className="opacity-75">¿Eres agente inmobiliario?</span> <span className="font-semibold">Registra tu cuenta profesional gratis</span>
+            </p>
           </motion.div>
         </div>
       </section>
+
+      {/* Contact Modal */}
+      <ContactModal
+        isOpen={contactModal.isOpen}
+        onClose={handleCloseContactModal}
+        propertyId={contactModal.propertyId}
+        propertyTitle={contactModal.propertyTitle}
+        agentId={contactModal.agentId}
+        agentName={contactModal.agentName}
+        agentAvatar={contactModal.agentAvatar}
+      />
 
     </div>
   )

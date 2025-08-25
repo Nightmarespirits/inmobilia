@@ -21,9 +21,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
-import Image from 'next/image'
 import { messagesService } from '@/lib/services/messages'
 import { supabase } from '@/lib/supabase'
 
@@ -55,6 +55,17 @@ type UIMessage = {
   timestamp: string
   senderId: string
   status: 'sent' | 'delivered' | 'read'
+}
+
+// Función para generar iniciales del nombre
+const getInitials = (name: string) => {
+  if (!name) return 'U'
+  return name
+    .split(' ')
+    .map(word => word.charAt(0))
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
 }
 
 export default function MessagesPage() {
@@ -325,15 +336,11 @@ export default function MessagesPage() {
               >
                 <div className="flex items-start gap-3">
                   <div className="relative">
-                    <div className="w-12 h-12 rounded-full overflow-hidden">
-                      <Image
-                        src={conversation.participant.avatar || 'https://api.dicebear.com/7.x/initials/svg?seed='+encodeURIComponent(conversation.participant.name)}
-                        alt={conversation.participant.name}
-                        width={48}
-                        height={48}
-                        className="object-cover"
-                      />
-                    </div>
+                    <Avatar className="h-12 w-12">
+                      <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-sm">
+                        {getInitials(conversation.participant.name)}
+                      </AvatarFallback>
+                    </Avatar>
                     {conversation.participant.isOnline && (
                       <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
                     )}
@@ -377,15 +384,11 @@ export default function MessagesPage() {
         <div className="bg-white border-b p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="w-10 h-10 rounded-full overflow-hidden">
-                <Image
-                  src={(activeConversation?.participant.avatar) || 'https://api.dicebear.com/7.x/initials/svg?seed='+encodeURIComponent(activeConversation?.participant.name || 'U')}
-                  alt={activeConversation?.participant.name || 'Usuario'}
-                  width={40}
-                  height={40}
-                  className="object-cover"
-                />
-              </div>
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-sm">
+                  {getInitials(activeConversation?.participant.name || 'Usuario')}
+                </AvatarFallback>
+              </Avatar>
               {activeConversation?.participant.isOnline && (
                 <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
               )}
