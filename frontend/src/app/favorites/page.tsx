@@ -320,6 +320,8 @@ export default function FavoritesPage() {
                     bathrooms={property.bathrooms}
                     area={property.area}
                     image={property.image}
+                    isFavorite={property.isFavorite}
+                    onFavoriteToggle={handleFavoriteToggle}
                     agentId={property.agentId}
                     onView={handleView}
                     onContact={handleContact}

@@ -16,7 +16,9 @@ export interface User {
   avatar?: string
   avatar_url?: string
   created_at: string
-  updated_at: string
+  updated_at: string 
+  bio: string
+  location: string
 }
 
 export interface Property {

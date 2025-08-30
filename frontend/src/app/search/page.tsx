@@ -570,6 +570,7 @@ export default function SearchPage() {
                   isFavorite={property.isFavorite}
                   onFavoriteToggle={handleFavoriteToggle}
                   className={viewMode === 'list' ? 'flex-row' : ''}
+                  agentId={property.agent_id}
                 />
               </motion.div>
             ))}

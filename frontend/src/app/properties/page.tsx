@@ -348,6 +348,7 @@ export default function PropertiesPage() {
                   bathrooms={property.bathrooms}
                   area={property.area}
                   image={property.images[0] || '/placeholder-property.jpg'}
+                  isFavorite={property.isFavorite}
                   status={property.status}
                   agentId={property.agent_id}
                   onView={handleViewDetails}

@@ -74,7 +74,7 @@ export default function RegisterPage() {
 
     try {
       await register({
-        name: formData.name,
+        full_name: formData.name,
         email: formData.email,
         password: formData.password,
         role: formData.role,

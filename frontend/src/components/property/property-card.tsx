@@ -18,11 +18,13 @@ interface PropertyCardProps {
   bathrooms: number
   area: number
   image: string
+  isFavorite: boolean
   status: 'available' | 'sold' | 'rented' | 'pending'
   agentId: string
   onView?: (id: string) => void
   onContact?: (propertyId: string, agentId: string, propertyTitle: string) => void
   className?: string
+  onFavoriteToggle?: (propertyId: string) => void
 }
 
 export function PropertyCard({

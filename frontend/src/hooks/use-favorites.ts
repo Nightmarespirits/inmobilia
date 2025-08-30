@@ -20,7 +20,7 @@ export function useFavorites(): UseFavoritesReturn {
   const { toast } = useToast()
 
   // Solo los compradores pueden usar favoritos
-  const canUseFavorites = user && (user.role === 'buyer' || user.role === 'customer' || !user.role)
+  const canUseFavorites = user && (user.role === 'buyer' || !user.role)
 
   // Cargar favoritos del usuario
   const loadFavorites = useCallback(async () => {

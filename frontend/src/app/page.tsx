@@ -326,6 +326,7 @@ export default function HomePage() {
                     bathrooms={property.bathrooms}
                     area={property.area}
                     image={property.images[0] || '/images/placeholder.jpg'}
+                    isFavorite={property.isFavorite}
                     status="available"
                     agentId={property.agent_id}
                     onView={() => handleViewProperty(property.id)}
