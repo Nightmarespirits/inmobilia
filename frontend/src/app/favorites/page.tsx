@@ -315,7 +315,7 @@ export default function FavoritesPage() {
                     title={property.title}
                     location={property.location}
                     price={property.price}
-                    status={property.status}
+                    status={property.status as "available" | "sold" | "rented"}
                     bedrooms={property.bedrooms}
                     bathrooms={property.bathrooms}
                     area={property.area}
