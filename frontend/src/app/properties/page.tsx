@@ -14,29 +14,11 @@ import { SearchFilters } from '@/components/search/search-filters'
 import { useAuth } from '@/hooks/use-auth'
 import { useContactRedirect } from '@/hooks/use-contact-redirect'
 import { getProperties, searchProperties } from '@/lib/services/properties'
-import { toggleFavorite, isFavorite } from '@/lib/services/favorites'
+// Las funciones de favoritos ahora se manejan internamente en PropertyCard
 import { useToast } from '@/hooks/use-toast'
-import { supabase } from '@/lib/supabase'
+import { supabase, type Property } from '@/lib/supabase'
 import { contactTrackingService } from '@/lib/services/contact-tracking'
 import Link from 'next/link'
-
-// Interfaces para propiedades
-interface Property {
-  id: string
-  title: string
-  location: string
-  price: number
-  type: string
-  status: string
-  bedrooms: number
-  bathrooms: number
-  area: number
-  images: string[]
-  description: string
-  features: string[]
-  isFavorite?: boolean
-  created_at?: string
-}
 
 type ViewMode = 'grid' | 'list'
 type SortOption = 'price-asc' | 'price-desc' | 'newest' | 'area-desc'
@@ -50,7 +32,7 @@ export default function PropertiesPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [currentFilters, setCurrentFilters] = useState({})
-  const [favoriteProperties, setFavoriteProperties] = useState<Set<string>>(new Set())
+  // Estado de favoritos removido - se maneja en PropertyCard
   
   // Contact Modal State
   const [contactModal, setContactModal] = useState<{
@@ -80,27 +62,7 @@ export default function PropertiesPage() {
       setIsLoading(true)
       try {
         const propertiesData = await getProperties()
-        
-        // Cargar estado de favoritos si el usuario está autenticado
-        let favoritesSet = new Set<string>()
-        if (user) {
-          const favoriteChecks = await Promise.all(
-            propertiesData.map(async (property) => {
-              const isFav = await isFavorite(user.id, property.id)
-              return { id: property.id, isFavorite: isFav }
-            })
-          )
-          favoritesSet = new Set(favoriteChecks.filter(f => f.isFavorite).map(f => f.id))
-        }
-        
-        // Agregar estado de favoritos a las propiedades
-        const propertiesWithFavorites = propertiesData.map(property => ({
-          ...property,
-          isFavorite: favoritesSet.has(property.id)
-        }))
-        
-        setProperties(propertiesWithFavorites)
-        setFavoriteProperties(favoritesSet)
+        setProperties(propertiesData)
       } catch (error) {
         console.error('Error loading properties:', error)
         toast({
@@ -149,70 +111,7 @@ export default function PropertiesPage() {
     })
     
     setFilteredProperties(filtered)
-  }, [properties, searchTerm, sortBy, favoriteProperties]) // Manejar toggle de favoritos
-
-  const handleFavoriteToggle = async (propertyId: string) => {
-    if (!user) {
-      toast({
-        title: "Inicia sesión",
-        description: "Debes iniciar sesión para agregar favoritos.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const wasFavorite = favoriteProperties.has(propertyId)
-      
-      // Actualizar UI optimistamente
-      const newFavorites = new Set(favoriteProperties)
-      if (wasFavorite) {
-        newFavorites.delete(propertyId)
-      } else {
-        newFavorites.add(propertyId)
-      }
-      setFavoriteProperties(newFavorites)
-      
-      // Actualizar propiedades
-      setProperties(prev => prev.map(prop => 
-        prop.id === propertyId 
-          ? { ...prop, isFavorite: !wasFavorite }
-          : prop
-      ))
-
-      // Hacer llamada a la API
-      await toggleFavorite(user.id, propertyId)
-      
-      toast({
-        title: wasFavorite ? "Removido de favoritos" : "Agregado a favoritos",
-        description: `La propiedad ha sido ${wasFavorite ? 'removida de' : 'agregada a'} tus favoritos.`,
-      })
-      
-    } catch (error) {
-      console.error('Error toggling favorite:', error)
-      
-      // Revertir cambio optimista en caso de error
-      const revertFavorites = new Set(favoriteProperties)
-      if (favoriteProperties.has(propertyId)) {
-        revertFavorites.delete(propertyId)
-      } else {
-        revertFavorites.add(propertyId)
-      }
-      setFavoriteProperties(revertFavorites)
-      
-      setProperties(prev => prev.map(prop => 
-        prop.id === propertyId 
-          ? { ...prop, isFavorite: favoriteProperties.has(propertyId) }
-          : prop
-      ))
-      
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar el favorito. Inténtalo de nuevo.",
-        variant: "destructive",
-      })
-    }
-  }
+  }, [properties, searchTerm, sortBy]) // Favoritos removidos - se manejan en PropertyCard
 
   // Manejar vista de detalles
   const handleViewDetails = (propertyId: string) => {
@@ -302,25 +201,7 @@ export default function PropertiesPage() {
         propertiesData = await getProperties()
       }
       
-      // Actualizar estado de favoritos
-      let favoritesSet = new Set<string>()
-      if (user) {
-        const favoriteChecks = await Promise.all(
-          propertiesData.map(async (property) => {
-            const isFav = await isFavorite(user.id, property.id)
-            return { id: property.id, isFavorite: isFav }
-          })
-        )
-        favoritesSet = new Set(favoriteChecks.filter(f => f.isFavorite).map(f => f.id))
-      }
-      
-      const propertiesWithFavorites = propertiesData.map(property => ({
-        ...property,
-        isFavorite: favoritesSet.has(property.id)
-      }))
-      
-      setProperties(propertiesWithFavorites)
-      setFavoriteProperties(favoritesSet)
+      setProperties(propertiesData)
     } catch (error) {
       console.error('Error applying filters:', error)
       toast({
@@ -468,9 +349,7 @@ export default function PropertiesPage() {
                   area={property.area}
                   image={property.images[0] || '/placeholder-property.jpg'}
                   status={property.status}
-                  agentId={property.agent_id || property.agentId || ''}
-                  isFavorite={property.isFavorite}
-                  onFavoriteToggle={handleFavoriteToggle}
+                  agentId={property.agent_id}
                   onView={handleViewDetails}
                   onContact={handleContact}
                   className={viewMode === 'list' ? 'flex-row' : ''}

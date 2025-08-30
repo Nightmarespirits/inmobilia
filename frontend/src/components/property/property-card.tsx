@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Heart, MapPin, Bed, Bath, Square, Eye } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { useFavorites } from '@/hooks/use-favorites'
 
 interface PropertyCardProps {
   id: string
@@ -18,8 +20,6 @@ interface PropertyCardProps {
   image: string
   status: 'available' | 'sold' | 'rented' | 'pending'
   agentId: string
-  isFavorite?: boolean
-  onFavoriteToggle?: (id: string) => void
   onView?: (id: string) => void
   onContact?: (propertyId: string, agentId: string, propertyTitle: string) => void
   className?: string
@@ -36,12 +36,14 @@ export function PropertyCard({
   image,
   status,
   agentId,
-  isFavorite = false,
-  onFavoriteToggle,
   onView,
   onContact,
   className
 }: PropertyCardProps) {
+  const { user } = useAuth()
+  const { toggleFavorite, isFavorite, canUseFavorites, isLoading } = useFavorites()
+  
+  const propertyIsFavorite = isFavorite(id)
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-PE', {
       style: 'currency',
@@ -82,7 +84,7 @@ export function PropertyCard({
   }
 
   return (
-    <Card className={`group hover:shadow-lg transition-all duration-300 ${className}`}>
+    <Card className={`group hover:shadow-lg transition-all duration-300 ${className}`} data-property-id={id}>
       <CardHeader className="p-0 relative">
         <div className="relative h-48 w-full overflow-hidden rounded-t-lg">
           <Image
@@ -99,15 +101,26 @@ export function PropertyCard({
             </Badge>
           </div>
           
-          {/* Favorite Button */}
-          <button
-            onClick={() => onFavoriteToggle?.(id)}
-            className="absolute top-3 right-3 p-2 bg-white/80 hover:bg-white rounded-full transition-colors"
-          >
-            <Heart 
-              className={`h-4 w-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} 
-            />
-          </button>
+          {/* Favorite Button - Solo para compradores */}
+          {canUseFavorites && (
+            <button
+              onClick={() => toggleFavorite(id)}
+              disabled={isLoading}
+              className={`absolute top-3 right-3 p-2 rounded-full transition-all duration-200 ${
+                propertyIsFavorite 
+                  ? 'bg-red-50 hover:bg-red-100 border border-red-200' 
+                  : 'bg-white/80 hover:bg-white'
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110'}`}
+            >
+              <Heart 
+                className={`h-4 w-4 transition-colors ${
+                  propertyIsFavorite 
+                    ? 'fill-red-500 text-red-500' 
+                    : 'text-gray-600 hover:text-red-400'
+                }`} 
+              />
+            </button>
+          )}
           
           {/* Price Overlay */}
           <div className="absolute bottom-3 left-3">

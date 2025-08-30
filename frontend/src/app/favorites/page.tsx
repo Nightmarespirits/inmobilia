@@ -18,12 +18,13 @@ const mockFavoriteProperties = [
     title: 'Casa Familiar en Miraflores',
     location: 'Miraflores, Lima',
     price: 850000,
-    type: 'house',
-    status: 'available',
+    type: 'house' as const,
+    status: 'available' as const,
     bedrooms: 4,
     bathrooms: 3,
     area: 200,
     image: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400&h=300&fit=crop',
+    agentId: 'agent-1',
     isFavorite: true,
     savedDate: '2024-01-20',
   },
@@ -32,12 +33,13 @@ const mockFavoriteProperties = [
     title: 'Loft Industrial en Callao',
     location: 'Callao, Lima',
     price: 280000,
-    type: 'apartment',
-    status: 'available',
+    type: 'apartment' as const,
+    status: 'available' as const,
     bedrooms: 1,
     bathrooms: 1,
     area: 65,
     image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=400&h=300&fit=crop',
+    agentId: 'agent-2',
     isFavorite: true,
     savedDate: '2024-01-18',
   },
@@ -133,6 +135,18 @@ export default function FavoritesPage() {
         description: "El enlace de tus favoritos se copió al portapapeles.",
       })
     }
+  }
+
+  const handleView = (propertyId: string) => {
+    router.push(`/properties/${propertyId}`)
+  }
+
+  const handleContact = (propertyId: string, agentId: string, propertyTitle: string) => {
+    // This would typically open a contact modal or redirect to contact form
+    toast({
+      title: "Contactar agente",
+      description: `Contactando agente para: ${propertyTitle}`,
+    })
   }
 
   if (!user) {
@@ -301,14 +315,14 @@ export default function FavoritesPage() {
                     title={property.title}
                     location={property.location}
                     price={property.price}
-                    type={property.type}
                     status={property.status}
                     bedrooms={property.bedrooms}
                     bathrooms={property.bathrooms}
                     area={property.area}
                     image={property.image}
-                    isFavorite={property.isFavorite}
-                    onFavoriteToggle={handleFavoriteToggle}
+                    agentId={property.agentId}
+                    onView={handleView}
+                    onContact={handleContact}
                     className={viewMode === 'list' ? 'flex-row' : ''}
                   />
                   

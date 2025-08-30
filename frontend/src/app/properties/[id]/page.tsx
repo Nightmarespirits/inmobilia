@@ -37,8 +37,8 @@ import { LoadingSpinner } from '@/components/ui/spinner'
 import { PropertyCardSkeleton } from '@/components/ui/loading-states'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { useFavorites } from '@/hooks/use-favorites'
 import { getPropertyById } from '@/lib/services/properties'
-import { toggleFavorite, isFavorite } from '@/lib/services/favorites'
 import type { Property } from '@/lib/supabase'
 
 // Mock property data
@@ -103,18 +103,20 @@ const mockProperty = {
   publishedDate: '2024-01-15',
 }
 
-export default function PropertyDetailPage() {
+export default function PropertyDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
   const { toast } = useToast()
+  const { toggleFavorite, isFavorite, canUseFavorites, isLoading: favoritesLoading } = useFavorites()
   
   const [property, setProperty] = useState<Property | null>(null)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
-  const [isFavorited, setIsFavorited] = useState(false)
-  const [isToggleFavorite, setIsToggleFavorite] = useState(false)
   const [showContactForm, setShowContactForm] = useState(false)
+  
+  const propertyId = params.id as string
+  const isFavorited = isFavorite(propertyId)
 
   // Cargar propiedad desde Supabase
   useEffect(() => {
@@ -123,12 +125,6 @@ export default function PropertyDetailPage() {
         setIsLoading(true)
         const propertyData = await getPropertyById(params.id as string)
         setProperty(propertyData)
-        
-        // Verificar si está en favoritos
-        if (user) {
-          const favoriteStatus = await isFavorite(user.id, propertyData.id)
-          setIsFavorited(favoriteStatus)
-        }
       } catch (error) {
         console.error('Error loading property:', error)
         toast({
@@ -183,36 +179,8 @@ export default function PropertyDetailPage() {
   }
 
   const handleFavoriteToggle = async () => {
-    if (!user) {
-      toast({
-        title: "Inicia sesión",
-        description: "Debes iniciar sesión para agregar a favoritos.",
-        variant: "destructive",
-      })
-      return
-    }
-
     if (!property) return
-    
-    try {
-      setIsToggleFavorite(true)
-      await toggleFavorite(user.id, property.id)
-      setIsFavorited(!isFavorited)
-      
-      toast({
-        title: isFavorited ? "Eliminado de favoritos" : "Agregado a favoritos",
-        description: isFavorited ? "La propiedad se eliminó de tus favoritos." : "La propiedad se agregó a tus favoritos.",
-      })
-    } catch (error) {
-      console.error('Error toggling favorite:', error)
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar favoritos.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsToggleFavorite(false)
-    }
+    await toggleFavorite(property.id)
   }
 
   const handleShare = async () => {
@@ -354,19 +322,30 @@ export default function PropertyDetailPage() {
                   
                   {/* Action buttons */}
                   <div className="absolute top-4 right-4 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant={isFavorited ? "default" : "secondary"}
-                      onClick={handleFavoriteToggle}
-                      disabled={isToggleFavorite}
-                      className="bg-white/90 hover:bg-white text-gray-900"
-                    >
-                      {isToggleFavorite ? (
-                        <LoadingSpinner className="h-4 w-4" />
-                      ) : (
-                        <Heart className={`h-4 w-4 ${isFavorited ? 'fill-red-500 text-red-500' : ''}`} />
-                      )}
-                    </Button>
+                    {/* Favorite Button - Solo para compradores */}
+                    {canUseFavorites && (
+                      <Button
+                        size="sm"
+                        variant={isFavorited ? "default" : "secondary"}
+                        onClick={handleFavoriteToggle}
+                        disabled={favoritesLoading}
+                        className={`${
+                          isFavorited 
+                            ? 'bg-red-50 hover:bg-red-100 border border-red-200 text-red-600' 
+                            : 'bg-white/90 hover:bg-white text-gray-900'
+                        } transition-all duration-200`}
+                      >
+                        {favoritesLoading ? (
+                          <LoadingSpinner className="h-4 w-4" />
+                        ) : (
+                          <Heart className={`h-4 w-4 transition-colors ${
+                            isFavorited 
+                              ? 'fill-red-500 text-red-500' 
+                              : 'text-gray-600 hover:text-red-400'
+                          }`} />
+                        )}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="secondary"
